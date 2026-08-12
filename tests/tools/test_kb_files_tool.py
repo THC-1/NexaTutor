@@ -49,7 +49,7 @@ def _stub_resolver(monkeypatch: pytest.MonkeyPatch, kb_dir: Path | None) -> list
         )
 
     monkeypatch.setattr(
-        "deeptutor.multi_user.knowledge_access.resolve_kb_manifest", _resolve, raising=False
+        "deeptutor.services.local_workspace.resolve_kb_manifest", _resolve, raising=False
     )
     return calls
 
@@ -100,7 +100,7 @@ class TestMountGate:
         )
         assert tools == ["obsidian_read", "rag", "kb_files", "ask_user"]
 
-    def test_a_partner_can_deny_it(self) -> None:
+    def test_builtin_whitelist_can_deny_it(self) -> None:
         tools = compose_enabled_tools(
             registry=_EmptyRegistry(),
             requested_tools=[],

@@ -81,7 +81,8 @@ def test_builtin_capability_aliases_resolve_to_canonical_names() -> None:
     assert runtime.resolve_capability("quiz") == "deep_question"
     assert runtime.resolve_capability("research") == "deep_research"
     assert runtime.resolve_capability("viz") == "visualize"
-    assert runtime.resolve_capability("animate") == "math_animator"
+    with pytest.raises(ValueError, match="Unknown capability `animate`"):
+        runtime.resolve_capability("animate")
     assert runtime.resolve_capability("mastery") == "mastery_path"
     with pytest.raises(ValueError, match="Unknown capability `auto`"):
         runtime.resolve_capability("auto")
@@ -190,16 +191,6 @@ def test_chat_repl_survives_invalid_utf8_input(monkeypatch) -> None:
 
     assert result.exit_code == 0, result.output
     assert "Unable to decode terminal input" in result.output
-
-
-def test_plugin_info_includes_capability_aliases_and_availability() -> None:
-    result = runner.invoke(app, ["plugin", "info", "deep_solve"])
-
-    assert result.exit_code == 0, result.output
-    payload = json.loads(result.output)
-    assert payload["name"] == "deep_solve"
-    assert payload["cli_aliases"] == ["solve"]
-    assert payload["availability"]["available"] is True
 
 
 def test_session_list_command_uses_shared_store(monkeypatch) -> None:

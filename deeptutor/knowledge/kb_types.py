@@ -10,34 +10,25 @@ flavours exist today:
   owns. No index at all; the Obsidian capability navigates the live files and
   the chat loop routes the KB to that capability instead of ``rag``.
 * ``linked`` — a pointer (``external_path``) to a folder that already holds an
-  engine index the user built elsewhere (LlamaIndex / GraphRAG / LightRAG).
+  engine index the user built elsewhere.
   Retrieval reads that index in place — the indexing step is skipped, and the
   KB is queried by its bound ``rag_provider`` exactly like an ordinary KB.
 * ``subagent`` — a pointer to a connected agent the capability drives live
   through the ``consult_subagent`` tool. ``agent_kind`` names the backend: a
-  *local* CLI (Claude Code / Codex), keyed by an optional ``cwd``; or a
-  ``partner`` (one of the user's own partners), keyed by ``partner_id``. It has
-  no path on disk and nothing to index or retrieve. See ``capabilities/subagent``.
-* ``lightrag_server`` — a pointer (``server_url`` + optional ``api_key``) to an
-  external, standalone LightRAG server the user already runs and indexed. We
-  never index or store anything locally: retrieval is offloaded to that server's
-  ``/query`` endpoint and the bound ``rag_provider`` (``lightrag-server``) shapes
-  the result for the ``rag`` tool. One server instance = one workspace = one KB.
-  See ``services/rag/pipelines/lightrag_server``.
-* ``ima`` — a pointer (``client_id`` + ``api_key`` + ``knowledge_base_id``) to a
-  knowledge base the user keeps in Tencent IMA. Same shape as
-  ``lightrag_server``: nothing indexed or stored locally, retrieval offloaded to
-  IMA's ``search_knowledge`` OpenAPI by the bound ``ima`` provider, and one IMA
-  library = one KB. See ``services/rag/pipelines/ima``.
+  local CLI (Claude Code / Codex and compatible agents), keyed by an optional
+  ``cwd``. It has no path on disk and nothing to index or retrieve. See
+  ``capabilities/subagent``.
+Legacy ``lightrag_server`` and ``ima`` records are no longer active providers,
+but remain data-safety sentinels so discovery never prunes or rewrites a user's
+historical connection record.
 
-All connected flavours share the same lifecycle quirks: no on-disk folder under
+All connected and inactive legacy flavours share the same lifecycle quirks: no on-disk folder under
 ``base_dir``, no embedding reconcile, and deletion must never touch the
 external resource. The :func:`is_connected_kb` / :func:`external_root_of` helpers
 let the manager treat them uniformly without sprinkling ``type`` literals
-across the codebase. ``subagent``, ``lightrag_server`` and ``ima`` are connected
+across the codebase. ``subagent``, legacy ``lightrag_server`` and legacy ``ima``
 but point at no folder, so :func:`external_root_of` returns ``None`` for them — a
-subagent is driven by its capability and the two server-backed kinds are reached
-over HTTP; none resolves to a local path.
+have no local document folder; none resolves to a local path.
 
 Kept in its own low-level module so both :mod:`deeptutor.knowledge.manager`
 and the capability layer can import it without a cycle.
@@ -62,29 +53,18 @@ LINKED_KB_TYPE = "linked"
 # working directory. Driven live via ``consult_subagent``; never indexed.
 SUBAGENT_KB_TYPE = "subagent"
 
-# A connected external LightRAG server: a pointer (``server_url`` + optional
-# ``api_key``) to a standalone LightRAG instance the user runs. No path on disk
-# and no local index — retrieval is offloaded over HTTP to the server's
-# ``/query`` endpoint by the ``lightrag-server`` provider.
-LIGHTRAG_SERVER_KB_TYPE = "lightrag_server"
-
-# A connected Tencent IMA knowledge base: a pointer (``client_id`` + ``api_key``
-# + ``knowledge_base_id``) to a library the user curates in IMA. No path on disk
-# and no local index — retrieval is offloaded over HTTPS to IMA's
-# ``search_knowledge`` OpenAPI by the ``ima`` provider.
-IMA_KB_TYPE = "ima"
-
-# Every pointer/connected KB type. Membership here is what makes the manager
-# skip the index pipeline, the orphan prune and the embedding reconcile.
-CONNECTED_KB_TYPES = frozenset(
-    {
-        OBSIDIAN_KB_TYPE,
-        LINKED_KB_TYPE,
-        SUBAGENT_KB_TYPE,
-        LIGHTRAG_SERVER_KB_TYPE,
-        IMA_KB_TYPE,
-    }
+# Retained pointer types still available to create and use.
+RETAINED_CONNECTED_KB_TYPES = frozenset(
+    {OBSIDIAN_KB_TYPE, LINKED_KB_TYPE, SUBAGENT_KB_TYPE}
 )
+
+# Removed remote providers remain here only to preserve historical config. They
+# are not registered, routable, or constructible and must never be contacted.
+LEGACY_INACTIVE_KB_TYPES = frozenset({"lightrag_server", "ima"})
+
+# Membership makes manager discovery skip index reconciliation and orphan
+# pruning. It is deliberately broader than the set of active connected types.
+CONNECTED_KB_TYPES = RETAINED_CONNECTED_KB_TYPES | LEGACY_INACTIVE_KB_TYPES
 
 
 def is_connected_kb(entry: Any) -> bool:
@@ -107,8 +87,8 @@ __all__ = [
     "OBSIDIAN_KB_TYPE",
     "LINKED_KB_TYPE",
     "SUBAGENT_KB_TYPE",
-    "LIGHTRAG_SERVER_KB_TYPE",
-    "IMA_KB_TYPE",
+    "RETAINED_CONNECTED_KB_TYPES",
+    "LEGACY_INACTIVE_KB_TYPES",
     "CONNECTED_KB_TYPES",
     "is_connected_kb",
     "external_root_of",

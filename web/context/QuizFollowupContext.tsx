@@ -124,11 +124,10 @@ export interface SendMessageInput {
   language?: string;
   /** Selected knowledge bases (names) for this turn. */
   knowledgeBases?: string[];
-  /** Notebook/book/history/question references — same shape the
+  /** Notebook/history/question references — same shape the
    *  main ChatPage builds for ``sendMessage``. */
   notebookReferences?: { notebook_id: string; record_ids: string[] }[];
   historyReferences?: string[];
-  bookReferences?: { book_id: string; page_ids: string[] }[];
   questionNotebookReferences?: number[];
   /** Behavior persona name to apply for this turn (single, optional). */
   persona?: string;
@@ -428,7 +427,6 @@ export function QuizFollowupProvider({ children }: ProviderProps) {
         config: input.config,
         notebook_references: input.notebookReferences,
         history_references: input.historyReferences,
-        book_references: input.bookReferences,
         question_notebook_references: input.questionNotebookReferences,
         // Always send the key (possibly ""): an absent key makes the backend
         // fall back to the session's stored persona preference, which would

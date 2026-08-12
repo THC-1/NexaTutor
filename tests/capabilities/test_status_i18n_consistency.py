@@ -26,13 +26,15 @@ _CODE = _REPO / "deeptutor" / "agents" / "visualize" / "capability.py"
 
 
 def _status_keys(lang: str) -> set[str]:
-    data = yaml.safe_load((_PROMPTS / lang / "visualize.yaml").read_text()) or {}
+    data = yaml.safe_load(
+        (_PROMPTS / lang / "visualize.yaml").read_text(encoding="utf-8")
+    ) or {}
     status = data.get("status") if isinstance(data, dict) else None
     return set((status or {}).keys())
 
 
 def _code() -> str:
-    return _CODE.read_text()
+    return _CODE.read_text(encoding="utf-8")
 
 
 def test_en_zh_status_parity() -> None:
@@ -55,9 +57,7 @@ def test_code_i18n_keys_exist_in_yaml() -> None:
 
 def test_no_orphan_yaml_keys() -> None:
     """Every yaml status key must be referenced as a string literal somewhere in
-    the module. Tolerates dynamic dispatch (e.g.
-    ``artifact_key = "manim_artifacts_one" if ... else "manim_artifacts_many"``)
-    while still catching dead copy left behind by deleted code paths."""
+    the module, catching dead copy left behind by deleted code paths."""
     code = _code()
     orphans = {k for k in _status_keys("en") if f'"{k}"' not in code}
     assert not orphans, (

@@ -18,8 +18,6 @@ import sys
 from typing import Any
 
 from deeptutor.knowledge.kb_types import (
-    IMA_KB_TYPE,
-    LIGHTRAG_SERVER_KB_TYPE,
     LINKED_KB_TYPE,
     OBSIDIAN_KB_TYPE,
     SUBAGENT_KB_TYPE,
@@ -30,9 +28,7 @@ from deeptutor.knowledge.manifest import iter_kb_documents
 from deeptutor.services.file_io import atomic_write_json
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
-    IMA_PROVIDER,
     KNOWN_PROVIDERS,
-    LIGHTRAG_SERVER_PROVIDER,
     has_ready_provider_index,
     normalize_provider_name,
     provider_uses_embedding_versions,
@@ -252,13 +248,6 @@ class KnowledgeBaseManager:
         self.config_file = self.base_dir / "kb_config.json"
         self.config = self._load_config()
 
-        # PocketBase sync — enabled when integrations.pocketbase_url is set.
-        # The local JSON file stays the source of truth; PocketBase gets a
-        # mirrored copy for admin-panel visibility and future multi-user access.
-        from deeptutor.services.pocketbase_client import is_pocketbase_enabled
-
-        self._pb_enabled = is_pocketbase_enabled()
-
     def _load_config(self) -> dict:
         """Load knowledge base configuration from the canonical kb_config.json file."""
         if self.config_file.exists():
@@ -349,35 +338,6 @@ class KnowledgeBaseManager:
         """
         atomic_write_json(self.config_file, self.config)
 
-    def _sync_kb_to_pb(self, name: str, kb_entry: dict) -> None:
-        """
-        Mirror a KB metadata entry to PocketBase (best-effort, non-blocking).
-        Called after every local config save when PocketBase is enabled.
-        """
-        if not self._pb_enabled:
-            return
-        try:
-            from deeptutor.services.pocketbase_client import get_pb_client
-
-            pb = get_pb_client()
-            records = pb.collection("knowledge_bases").get_full_list(
-                query_params={"filter": f'kb_name="{name}"'}
-            )
-            payload = {
-                "kb_name": name,
-                "description": kb_entry.get("description", f"Knowledge base: {name}"),
-                "rag_provider": kb_entry.get("rag_provider", "llamaindex"),
-                "needs_reindex": bool(kb_entry.get("needs_reindex", False)),
-                "status": kb_entry.get("status", "unknown"),
-                "kb_created_at": kb_entry.get("created_at", ""),
-            }
-            if records:
-                pb.collection("knowledge_bases").update(records[0].id, payload)
-            else:
-                pb.collection("knowledge_bases").create(payload)
-        except Exception as exc:
-            logger.debug(f"PocketBase KB sync failed for '{name}': {exc}")
-
     def update_kb_status(
         self,
         name: str,
@@ -386,9 +346,6 @@ class KnowledgeBaseManager:
     ):
         """
         Update knowledge base status and progress in kb_config.json.
-
-        When PocketBase is enabled, the updated entry is also mirrored to the
-        PocketBase knowledge_bases collection (best-effort).
 
         Args:
             name: Knowledge base name
@@ -486,7 +443,6 @@ class KnowledgeBaseManager:
                 pass
 
         self._save_config()
-        self._sync_kb_to_pb(name, kb_config)
 
     def get_kb_entry(self, name: str) -> dict | None:
         """The KB's raw ``kb_config.json`` record, or ``None`` if unregistered.
@@ -782,21 +738,18 @@ class KnowledgeBaseManager:
         agent_kind: str,
         *,
         cwd: str = "",
-        partner_id: str = "",
         description: str = "",
     ) -> dict:
-        """Register a connected subagent (local Claude Code / Codex, or a partner) as a KB.
+        """Register a connected local agent CLI as a KB.
 
         Like the other connected types this creates no folder and runs no index:
         it records a ``type: subagent`` pointer naming the backend (``agent_kind``)
-        and its target — an optional working directory (``cwd``) for a local CLI,
-        or the bound ``partner_id`` for the partner backend. The subagent
-        capability drives the live agent; there is nothing on disk to retrieve or
-        reconcile. Raises ``ValueError`` on a missing name/kind or a name clash.
+        and an optional working directory (``cwd``). The subagent capability
+        drives the live agent; there is nothing on disk to retrieve or reconcile.
+        Raises ``ValueError`` on a missing name/kind or a name clash.
         """
         name = (name or "").strip()
         agent_kind = (agent_kind or "").strip()
-        partner_id = (partner_id or "").strip()
         if not name:
             raise ValueError("Connection name is required.")
         if not agent_kind:
@@ -819,112 +772,8 @@ class KnowledgeBaseManager:
             "type": SUBAGENT_KB_TYPE,
             "agent_kind": agent_kind,
             "cwd": resolved_cwd,
-            "partner_id": partner_id,
             "description": description or f"Connected subagent: {name}",
             "status": "ready",
-            "created_at": now,
-            "updated_at": now,
-        }
-        knowledge_bases[name] = entry
-        self._save_config()
-        return entry
-
-    def register_lightrag_server_kb(
-        self,
-        name: str,
-        server_url: str,
-        *,
-        api_key: str = "",
-        search_mode: str = "",
-        description: str = "",
-    ) -> dict:
-        """Register a pointer to an external LightRAG server as a connected KB.
-
-        Like the other connected types this creates no folder under ``base_dir``
-        and runs no index pipeline: it records a ``type: lightrag_server`` entry
-        whose ``server_url`` (+ optional ``api_key``) the ``lightrag-server``
-        provider queries over HTTP. The server owns indexing entirely. Callers
-        should validate reachability with the probe helper first; this only
-        guards basic invariants. Raises ``ValueError`` on a missing name/URL or a
-        name clash.
-        """
-        name = (name or "").strip()
-        server_url = (server_url or "").strip().rstrip("/")
-        if not name:
-            raise ValueError("Knowledge base name is required.")
-        if not server_url:
-            raise ValueError("LightRAG server URL is required.")
-
-        self.config = self._load_config()
-        knowledge_bases = self.config.setdefault("knowledge_bases", {})
-        if name in knowledge_bases:
-            raise ValueError(f"A knowledge base named '{name}' already exists.")
-
-        now = datetime.now().isoformat()
-        entry: dict[str, Any] = {
-            "path": name,
-            "type": LIGHTRAG_SERVER_KB_TYPE,
-            "rag_provider": LIGHTRAG_SERVER_PROVIDER,
-            "server_url": server_url,
-            "api_key": (api_key or "").strip(),
-            "description": description or f"LightRAG server: {name}",
-            "status": "ready",
-            "needs_reindex": False,
-            "created_at": now,
-            "updated_at": now,
-        }
-        search_mode = (search_mode or "").strip().lower()
-        if search_mode:
-            entry["search_mode"] = search_mode
-        knowledge_bases[name] = entry
-        self._save_config()
-        return entry
-
-    def register_ima_kb(
-        self,
-        name: str,
-        client_id: str,
-        api_key: str,
-        knowledge_base_id: str,
-        *,
-        description: str = "",
-    ) -> dict:
-        """Register a pointer to a Tencent IMA knowledge base as a connected KB.
-
-        Like the other connected types this creates no folder under ``base_dir``
-        and runs no index pipeline: it records a ``type: ima`` entry whose
-        credentials and library id the ``ima`` provider queries over IMA's
-        OpenAPI. IMA owns indexing entirely. Callers should validate the binding
-        with the probe helper first; this only guards basic invariants. Raises
-        ``ValueError`` on a missing field or a name clash.
-        """
-        name = (name or "").strip()
-        client_id = (client_id or "").strip()
-        api_key = (api_key or "").strip()
-        knowledge_base_id = (knowledge_base_id or "").strip()
-        if not name:
-            raise ValueError("Knowledge base name is required.")
-        if not client_id or not api_key:
-            raise ValueError("IMA Client ID and API Key are required.")
-        if not knowledge_base_id:
-            raise ValueError("IMA knowledge base ID is required.")
-
-        self.config = self._load_config()
-        knowledge_bases = self.config.setdefault("knowledge_bases", {})
-        if name in knowledge_bases:
-            raise ValueError(f"A knowledge base named '{name}' already exists.")
-
-        now = datetime.now().isoformat()
-        entry: dict[str, Any] = {
-            "path": name,
-            "type": IMA_KB_TYPE,
-            "rag_provider": IMA_PROVIDER,
-            "client_id": client_id,
-            "api_key": api_key,
-            "knowledge_base_id": knowledge_base_id,
-            "description": description or f"Tencent IMA: {name}",
-            "status": "ready",
-            "needs_reindex": False,
             "created_at": now,
             "updated_at": now,
         }
@@ -1080,8 +929,7 @@ class KnowledgeBaseManager:
                 "type": kb_config.get("type"),
                 "vault_path": kb_config.get("vault_path"),
                 "external_path": kb_config.get("external_path"),
-                # LightRAG server pointer (the URL is safe to surface; the API
-                # key deliberately is not).
+                # Legacy remote pointer URL is safe to surface; credentials are not.
                 "server_url": kb_config.get("server_url"),
                 # IMA pointer. The library id identifies which IMA knowledge
                 # base this KB reads; the client id and API key are credentials
@@ -1090,7 +938,6 @@ class KnowledgeBaseManager:
                 # Subagent connection fields (None for non-subagent KBs).
                 "agent_kind": kb_config.get("agent_kind"),
                 "cwd": kb_config.get("cwd"),
-                "partner_id": kb_config.get("partner_id"),
             }
             metadata.update(self._embedding_fields(kb_config))
             # Remove None values

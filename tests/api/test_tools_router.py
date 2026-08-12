@@ -40,13 +40,10 @@ async def test_list_builtin_tools_marks_toggleable_set(
     toggleable_names = {name for name, tool in by_name.items() if tool.toggleable}
     assert toggleable_names == set(USER_TOGGLEABLE_TOOL_NAMES)
     assert toggleable_names == {
-        "brainstorm",
+        "code_execution",
         "web_search",
         "paper_search",
-        "reason",
-        "geogebra_analysis",
         "imagegen",
-        "videogen",
     }
 
     # Locked-on (non-toggleable, non-coming-soon) tools always report
@@ -55,10 +52,12 @@ async def test_list_builtin_tools_marks_toggleable_set(
         if not tool.toggleable and not tool.coming_soon:
             assert tool.enabled is True, name
 
-    # On a fresh settings file the default toggleable set is "all on".
-    assert set(response.enabled_optional_tools) == set(USER_TOGGLEABLE_TOOL_NAMES)
+    # Code execution is visible but off until explicitly enabled.
+    assert "code_execution" not in response.enabled_optional_tools
+    assert by_name["code_execution"].enabled is False
     for name in USER_TOGGLEABLE_TOOL_NAMES:
-        assert by_name[name].enabled is True
+        if name != "code_execution":
+            assert by_name[name].enabled is True
 
 
 @pytest.mark.asyncio
@@ -91,19 +90,16 @@ async def test_list_builtin_tools_reflects_user_toggle(
 
     # User disables a subset of toggleable tools.
     await settings_router.update_enabled_tools(
-        settings_router.EnabledToolsUpdate(enabled_tools=["web_search", "reason"])
+        settings_router.EnabledToolsUpdate(enabled_tools=["web_search"])
     )
 
     response = await tools_router.list_builtin_tools()
     by_name = {tool.name: tool for tool in response.tools}
 
-    assert response.enabled_optional_tools == ["reason", "web_search"]
+    assert response.enabled_optional_tools == ["web_search"]
     assert by_name["web_search"].enabled is True
-    assert by_name["reason"].enabled is True
-    assert by_name["brainstorm"].enabled is False
     assert by_name["paper_search"].enabled is False
-    # Locked-on tools stay on regardless (code_execution is now auto-mounted,
-    # gated by sandbox availability rather than a user toggle).
-    assert by_name["code_execution"].enabled is True
+    # Code execution is an explicit opt-in and remains off in this partial set.
+    assert by_name["code_execution"].enabled is False
     assert by_name["rag"].enabled is True
     assert by_name["web_fetch"].enabled is True

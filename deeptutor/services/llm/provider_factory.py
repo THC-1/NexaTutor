@@ -54,21 +54,6 @@ def _build_runtime_provider(llm_config: LLMConfig) -> LLMProvider:
         )
 
         provider: LLMProvider = OpenAICodexProvider(default_model=llm_config.model)
-    elif backend == "github_copilot":
-        from deeptutor.services.llm.provider_core.github_copilot_provider import (
-            GitHubCopilotProvider,
-        )
-
-        provider = GitHubCopilotProvider(default_model=llm_config.model)
-    elif backend == "azure_openai":
-        from deeptutor.services.llm.provider_core.azure_openai_provider import AzureOpenAIProvider
-
-        provider = AzureOpenAIProvider(
-            api_key=llm_config.api_key or "",
-            api_base=llm_config.effective_url or llm_config.base_url or "",
-            default_model=llm_config.model,
-            extra_headers=llm_config.extra_headers or None,
-        )
     elif backend == "anthropic":
         from deeptutor.services.llm.provider_core.anthropic_provider import AnthropicProvider
 

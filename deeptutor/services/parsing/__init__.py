@@ -1,7 +1,7 @@
 """Shared, engine-pluggable document-parsing layer (the "bridge").
 
 Sits between input material and its consumers (question extraction, RAG
-indexing, future LightRAG): one canonical IR (:class:`ParsedDocument`), one
+indexing): one canonical IR (:class:`ParsedDocument`), one
 content-addressed cache, a registry of pluggable engines (text-only, MinerU,
 Docling, markitdown). Parsing is upstream of and independent from retrieval.
 

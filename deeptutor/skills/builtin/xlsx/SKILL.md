@@ -15,8 +15,8 @@ requires:
 # Excel (.xlsx) workbooks
 
 Work in the workspace dir (where uploads land) by writing short Python run via
-`exec`. Two libraries, both preinstalled — pick by task:
-After `exec` completes, use the Generated artifacts URL from the tool result in
+restricted Python `code_execution`. Two libraries are available — pick by task:
+After `code_execution` completes, use the Generated artifacts URL from the tool result in
 the final answer so the user can download the workbook.
 
 - **pandas** — bulk tabular read/write/analysis. Use for "load this sheet,

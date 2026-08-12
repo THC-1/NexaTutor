@@ -19,28 +19,6 @@ export interface KnowledgeBaseSummary {
   available?: boolean;
 }
 
-export interface RagProviderSummary {
-  id: string;
-  name: string;
-  description: string;
-  /** Whether the engine is ready to use (e.g. its API key is set). */
-  configured?: boolean;
-  /** Whether the engine needs an API key configured before use. */
-  requires_api_key?: boolean;
-  /** Retrieval modes this engine supports (empty for mode-less engines). */
-  modes?: string[];
-  /** The active default retrieval mode for this engine. */
-  default_mode?: string;
-  /** Whether an existing index for this engine can be linked in place. */
-  linkable?: boolean;
-}
-
-export interface PageIndexConfig {
-  api_base_url: string;
-  api_key_set: boolean;
-  configured: boolean;
-}
-
 export interface LlamaIndexConfig {
   version: number;
   /** "hybrid" (BM25 + vector fusion) or "vector" only. */
@@ -53,50 +31,6 @@ export interface LlamaIndexConfig {
   chunk_size: number;
   chunk_overlap: number;
 }
-
-export interface GraphRagConfig {
-  version: number;
-  response_type: string;
-  community_level: number;
-  dynamic_community_selection: boolean;
-}
-
-export interface LightRagConfig {
-  version: number;
-  top_k: number;
-  response_type: string;
-}
-
-export interface PreflightCheck {
-  key: string;
-  label: string;
-  ok: boolean;
-  detail: string;
-  /** Optional checks don't gate overall readiness (e.g. BM25, vision). */
-  optional: boolean;
-}
-
-export interface EnginePreflight {
-  ok: boolean;
-  checks: PreflightCheck[];
-}
-
-export interface ModelOption {
-  profile_id: string;
-  profile_name: string;
-  model_id: string;
-  label: string;
-  model: string;
-  detail: string;
-}
-
-export interface ModelKindOptions {
-  active: { profile_id: string | null; model_id: string | null };
-  options: ModelOption[];
-}
-
-/** Map of service kind ("llm" | "embedding") → its options + active selection. */
-export type ModelOptionsByKind = Record<string, ModelKindOptions>;
 
 export interface KnowledgeUploadPolicy {
   extensions: string[];
@@ -183,25 +117,6 @@ export async function listKnowledgeBases(options?: { force?: boolean }) {
   );
 }
 
-export async function listRagProviders(options?: { force?: boolean }) {
-  return withClientCache<RagProviderSummary[]>(
-    `${KNOWLEDGE_CACHE_PREFIX}providers`,
-    async () => {
-      const response = await apiFetch(
-        apiUrl("/api/v1/knowledge/rag-providers"),
-        {
-          cache: "no-store",
-        },
-      );
-      const data = await response.json();
-      return Array.isArray(data?.providers) ? data.providers : [];
-    },
-    {
-      force: options?.force,
-    },
-  );
-}
-
 export async function getKnowledgeUploadPolicy(options?: { force?: boolean }) {
   return withClientCache<KnowledgeUploadPolicy>(
     `${KNOWLEDGE_CACHE_PREFIX}upload-policy`,
@@ -223,49 +138,6 @@ export async function getKnowledgeUploadPolicy(options?: { force?: boolean }) {
 
 export function invalidateKnowledgeCaches() {
   invalidateClientCache(KNOWLEDGE_CACHE_PREFIX);
-}
-
-const PAGEINDEX_CONFIG_PATH =
-  "/api/v1/knowledge/rag-pipelines/pageindex/config";
-
-export async function getPageIndexConfig(options?: {
-  force?: boolean;
-}): Promise<PageIndexConfig> {
-  return withClientCache<PageIndexConfig>(
-    `${KNOWLEDGE_CACHE_PREFIX}pageindex-config`,
-    async () => {
-      const response = await apiFetch(apiUrl(PAGEINDEX_CONFIG_PATH), {
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error(
-          await readErrorDetail(response, "Failed to read PageIndex config"),
-        );
-      }
-      return (await response.json()) as PageIndexConfig;
-    },
-    { force: options?.force, ttlMs: 15_000 },
-  );
-}
-
-export async function updatePageIndexConfig(payload: {
-  /** Omit to keep the stored key, "" to clear it, any value to replace it. */
-  api_key?: string;
-  api_base_url?: string;
-}): Promise<PageIndexConfig> {
-  const res = await apiFetch(apiUrl(PAGEINDEX_CONFIG_PATH), {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    throw new Error(
-      await readErrorDetail(res, "Failed to update PageIndex config"),
-    );
-  }
-  // The provider list's `configured` flag depends on this; refresh it.
-  invalidateKnowledgeCaches();
-  return (await res.json()) as PageIndexConfig;
 }
 
 const LLAMAINDEX_CONFIG_PATH =
@@ -306,136 +178,6 @@ export async function updateLlamaIndexConfig(
   }
   invalidateKnowledgeCaches();
   return (await res.json()) as LlamaIndexConfig;
-}
-
-async function getEngineConfig<T>(
-  provider: string,
-  cacheKey: string,
-  options?: { force?: boolean },
-): Promise<T> {
-  return withClientCache<T>(
-    `${KNOWLEDGE_CACHE_PREFIX}${cacheKey}`,
-    async () => {
-      const response = await apiFetch(
-        apiUrl(`/api/v1/knowledge/rag-pipelines/${provider}/config`),
-        { cache: "no-store" },
-      );
-      if (!response.ok) {
-        throw new Error(
-          await readErrorDetail(response, `Failed to read ${provider} config`),
-        );
-      }
-      return (await response.json()) as T;
-    },
-    { force: options?.force, ttlMs: 15_000 },
-  );
-}
-
-async function updateEngineConfig<T>(
-  provider: string,
-  payload: Record<string, unknown>,
-): Promise<T> {
-  const res = await apiFetch(
-    apiUrl(`/api/v1/knowledge/rag-pipelines/${provider}/config`),
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(
-      await readErrorDetail(res, `Failed to update ${provider} config`),
-    );
-  }
-  invalidateKnowledgeCaches();
-  return (await res.json()) as T;
-}
-
-export const getGraphRagConfig = (options?: { force?: boolean }) =>
-  getEngineConfig<GraphRagConfig>("graphrag", "graphrag-config", options);
-export const updateGraphRagConfig = (
-  payload: Partial<Omit<GraphRagConfig, "version">>,
-) => updateEngineConfig<GraphRagConfig>("graphrag", payload);
-
-export const getLightRagConfig = (options?: { force?: boolean }) =>
-  getEngineConfig<LightRagConfig>("lightrag", "lightrag-config", options);
-export const updateLightRagConfig = (
-  payload: Partial<Omit<LightRagConfig, "version">>,
-) => updateEngineConfig<LightRagConfig>("lightrag", payload);
-
-export async function getEnginePreflight(
-  provider: string,
-): Promise<EnginePreflight> {
-  const res = await apiFetch(
-    apiUrl(`/api/v1/knowledge/rag-pipelines/${provider}/preflight`),
-    { cache: "no-store" },
-  );
-  if (!res.ok) {
-    throw new Error(await readErrorDetail(res, "Failed to check environment"));
-  }
-  return (await res.json()) as EnginePreflight;
-}
-
-export async function getEngineModelOptions(
-  kinds: string[],
-): Promise<ModelOptionsByKind> {
-  const res = await apiFetch(
-    apiUrl(
-      `/api/v1/knowledge/rag-pipelines/model-options?kinds=${encodeURIComponent(
-        kinds.join(","),
-      )}`,
-    ),
-    { cache: "no-store" },
-  );
-  if (!res.ok) {
-    throw new Error(await readErrorDetail(res, "Failed to read model options"));
-  }
-  return (await res.json()) as ModelOptionsByKind;
-}
-
-export async function setEngineActiveModel(
-  kind: string,
-  profileId: string,
-  modelId: string,
-): Promise<ModelKindOptions> {
-  const res = await apiFetch(
-    apiUrl("/api/v1/knowledge/rag-pipelines/active-model"),
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, profile_id: profileId, model_id: modelId }),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(await readErrorDetail(res, "Failed to switch model"));
-  }
-  invalidateKnowledgeCaches();
-  return (await res.json()) as ModelKindOptions;
-}
-
-export async function updateRagProviderMode(
-  provider: string,
-  mode: string,
-): Promise<{ provider: string; mode: string }> {
-  const res = await apiFetch(
-    apiUrl(
-      `/api/v1/knowledge/rag-providers/${encodeURIComponent(provider)}/mode`,
-    ),
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode }),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(
-      await readErrorDetail(res, "Failed to update retrieval mode"),
-    );
-  }
-  // The provider list's `default_mode` depends on this; refresh it.
-  invalidateKnowledgeCaches();
-  return (await res.json()) as { provider: string; mode: string };
 }
 
 function withDockerUpgradeHint(
@@ -533,12 +275,10 @@ function appendFilesWithPaths(form: FormData, files: File[]): void {
 
 export async function createKnowledgeBase(payload: {
   name: string;
-  provider: string;
   files: File[];
 }): Promise<KnowledgeTaskResponse> {
   const form = new FormData();
   form.append("name", payload.name);
-  form.append("rag_provider", payload.provider);
   appendFilesWithPaths(form, payload.files);
 
   const res = await apiFetch(apiUrl("/api/v1/knowledge/create"), {
@@ -645,88 +385,12 @@ export async function connectLinkedFolder(payload: {
   };
 }
 
-export interface LightRagServerProbe {
-  /** Reachable, a LightRAG server, and (if required) the API key is accepted. */
-  ok: boolean;
-  base_url: string;
-  reachable: boolean;
-  auth_required: boolean;
-  auth_ok: boolean;
-  core_version: string | null;
-  api_version: string | null;
-  /** Set when the server can't be connected (unreachable, bad key, …). */
-  error: string | null;
-}
-
-export async function probeLightRagServer(payload: {
-  serverUrl: string;
-  apiKey?: string;
-}): Promise<LightRagServerProbe> {
-  const res = await apiFetch(
-    apiUrl("/api/v1/knowledge/probe-lightrag-server"),
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        server_url: payload.serverUrl,
-        api_key: payload.apiKey ?? "",
-      }),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(
-      await readErrorDetail(res, "Failed to reach LightRAG server"),
-    );
-  }
-  return (await res.json()) as LightRagServerProbe;
-}
-
-export async function connectLightRagServer(payload: {
-  name: string;
-  serverUrl: string;
-  apiKey?: string;
-  mode?: string;
-}): Promise<{
-  status: string;
-  name: string;
-  server_url: string;
-  rag_provider: string;
-}> {
-  const res = await apiFetch(
-    apiUrl("/api/v1/knowledge/connect-lightrag-server"),
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: payload.name,
-        server_url: payload.serverUrl,
-        api_key: payload.apiKey ?? "",
-        search_mode: payload.mode ?? "",
-      }),
-    },
-  );
-  if (!res.ok) {
-    throw new Error(
-      await readErrorDetail(res, "Failed to connect LightRAG server"),
-    );
-  }
-  invalidateKnowledgeCaches();
-  return (await res.json()) as {
-    status: string;
-    name: string;
-    server_url: string;
-    rag_provider: string;
-  };
-}
-
 export async function uploadKnowledgeBaseFiles(
   name: string,
   files: File[],
-  options?: { provider?: string },
 ): Promise<KnowledgeTaskResponse> {
   const form = new FormData();
   appendFilesWithPaths(form, files);
-  if (options?.provider) form.append("rag_provider", options.provider);
 
   const res = await apiFetch(
     apiUrl(`/api/v1/knowledge/${encodeURIComponent(name)}/upload`),

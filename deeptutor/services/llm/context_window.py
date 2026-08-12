@@ -18,8 +18,6 @@ KNOWN_LARGE_CONTEXT_MARKERS = (
     "gemini",
     "qwen",
     "deepseek",
-    "moonshot",
-    "kimi",
 )
 
 

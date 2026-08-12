@@ -208,14 +208,6 @@ async def list_builtin_tools() -> ToolsListResponse:
             continue
         seen.add(payload.name)
         deduped.append(payload)
-    # Toggleable tools outside the user's admin grant don't exist for them:
-    # hidden here so the settings page and composer match what turn_runtime
-    # will actually allow.
-    from deeptutor.multi_user.tool_access import allowed_optional_tools
-
-    allowed = allowed_optional_tools()
-    if allowed is not None:
-        deduped = [p for p in deduped if not p.toggleable or p.name in allowed]
     return ToolsListResponse(
         tools=deduped,
         enabled_optional_tools=sorted(enabled_optional),

@@ -1,13 +1,13 @@
 # ============================================
-# DeepTutor Multi-Stage Dockerfile
+# NexaTutor Multi-Stage Dockerfile
 # ============================================
-# This Dockerfile builds a production-ready image for DeepTutor
+# This Dockerfile builds a production-ready image for NexaTutor
 # containing both the FastAPI backend and Next.js frontend
 #
 # Build/run:
-#   docker build -t deeptutor:local .
+#   docker build -t nexatutor:local .
 #   docker run -p 127.0.0.1:3782:3782 -p 127.0.0.1:8001:8001 \
-#     -v deeptutor-data:/app/data deeptutor:local
+#     -v nexatutor-data:/app/data nexatutor:local
 #
 # Prerequisites:
 #   1. Runtime settings are created under data/user/settings on first start
@@ -43,7 +43,7 @@ COPY deeptutor/__version__.py /app/deeptutor/__version__.py
 # exposed to the browser via next.config.js). URL knowledge is no longer baked
 # into the bundle: `apiUrl`/`wsUrl` in web/lib/api.ts are pass-throughs and
 # the actual backend host is read at request time by web/proxy.ts from
-# DEEPTUTOR_API_BASE_URL (exported by the entrypoint on every start).
+# NEXATUTOR_API_BASE_URL (exported by the entrypoint on every start).
 RUN printf 'NEXT_PUBLIC_APP_VERSION=\n' > .env.local
 
 # Build Next.js for production with standalone output
@@ -104,8 +104,8 @@ RUN pip install --upgrade pip && \
 FROM python:3.11-slim AS production
 
 # Labels
-LABEL maintainer="DeepTutor Team" \
-      description="DeepTutor: AI-Powered Personalized Learning Assistant"
+LABEL maintainer="NexaTutor Team" \
+      description="NexaTutor: local-first AI learning workspace"
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -114,15 +114,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MALLOC_ARENA_MAX=2 \
     MALLOC_TRIM_THRESHOLD_=131072 \
     NODE_ENV=production \
-    DEEPTUTOR_IGNORE_PROCESS_ENV_OVERRIDES=1
+    NEXATUTOR_IGNORE_PROCESS_ENV_OVERRIDES=1
 
-# Code-execution sandbox: the restricted-subprocess backend (which the office
-# skills — docx/pdf/pptx/xlsx — rely on for `exec` / `code_execution`) is
-# enabled by default via the `sandbox_allow_subprocess` runtime setting
-# (system.json, default on), exported to DEEPTUTOR_SANDBOX_ALLOW_SUBPROCESS at
-# startup. No hardcoded ENV here — that would override the setting and block
-# disabling it. docker-compose still routes exec to the hardened runner sidecar
-# (DEEPTUTOR_SANDBOX_RUNNER_URL), which build_backend() prefers.
+# Restricted Code Execution is disabled by default and never accepts the host
+# subprocess backend. docker-compose routes explicitly enabled Python argv to
+# the hardened runner sidecar (NEXATUTOR_SANDBOX_RUNNER_URL).
 
 WORKDIR /app
 
@@ -183,7 +179,6 @@ RUN mkdir -p \
     data/user/workspace/chat/deep_solve \
     data/user/workspace/chat/deep_question \
     data/user/workspace/chat/deep_research/reports \
-    data/user/workspace/chat/math_animator \
     data/user/workspace/chat/_detached_code_execution \
     data/user/logs \
     data/knowledge_bases
@@ -297,7 +292,7 @@ RUN sed -i 's/\r$//' /app/start-backend.sh && chmod +x /app/start-backend.sh
 # Create frontend startup script
 # This script starts the Next.js standalone server. URL knowledge is no
 # longer baked into the bundle: web/proxy.ts rewrites /api/* and /ws/* to
-# the configured backend at request time, reading DEEPTUTOR_API_BASE_URL
+# the configured backend at request time, reading NEXATUTOR_API_BASE_URL
 # (exported by the entrypoint from data/user/settings/system.json).
 RUN cat > /app/start-frontend.sh <<'EOF'
 #!/bin/bash
@@ -320,10 +315,10 @@ RUN cat > /app/entrypoint.sh <<'EOF'
 set -e
 
 echo "============================================"
-echo "🚀 Starting DeepTutor"
+echo "Starting NexaTutor"
 echo "============================================"
 
-export DEEPTUTOR_IGNORE_PROCESS_ENV_OVERRIDES=1
+export NEXATUTOR_IGNORE_PROCESS_ENV_OVERRIDES=1
 
 # Docker is JSON-driven. Ignore runtime env names even if the host or a stale
 # Compose environment provides them; the entrypoint re-exports values from
@@ -339,6 +334,7 @@ for key in \
     CHAT_ATTACHMENT_DIR \
     AUTH_ENABLED \
     NEXT_PUBLIC_AUTH_ENABLED \
+    DEEPTUTOR_AUTH_ENABLED \
     AUTH_USERNAME \
     AUTH_PASSWORD_HASH \
     AUTH_TOKEN_EXPIRE_HOURS \
@@ -349,7 +345,7 @@ for key in \
     POCKETBASE_ADMIN_EMAIL \
     POCKETBASE_ADMIN_PASSWORD \
     DEEPTUTOR_API_BASE_URL \
-    DEEPTUTOR_AUTH_ENABLED; do
+    NEXATUTOR_API_BASE_URL; do
     unset "$key"
 done
 
@@ -379,22 +375,19 @@ PY
 export BACKEND_PORT=${BACKEND_PORT:-8001}
 export FRONTEND_PORT=${FRONTEND_PORT:-3782}
 
-# DEEPTUTOR_API_BASE_URL and DEEPTUTOR_AUTH_ENABLED are exported by the
+# NEXATUTOR_API_BASE_URL is exported by the
 # export_runtime_settings_to_env eval above (see render_environment in
-# deeptutor/services/config/runtime_settings.py). web/proxy.ts reads them at
-# request time to rewrite /api/* and /ws/* to the backend and to gate the login
-# redirect. Keeping them in the single JSON-backed exporter means the Docker and
+# deeptutor/services/config/runtime_settings.py). web/proxy.ts reads it at
+# request time to rewrite /api/* and /ws/* to the backend. Keeping it in the
+# single JSON-backed exporter means the Docker and
 # `deeptutor start` paths stay in sync.
-echo "📌 API Base URL (proxy): ${DEEPTUTOR_API_BASE_URL:-http://localhost:${BACKEND_PORT}}"
-echo "📌 Auth enabled: ${DEEPTUTOR_AUTH_ENABLED:-false}"
-
+echo "API Base URL (proxy): ${NEXATUTOR_API_BASE_URL:-http://localhost:${BACKEND_PORT}}"
 echo "📌 Backend Port: ${BACKEND_PORT}"
 echo "📌 Frontend Port: ${FRONTEND_PORT}"
 
 echo "============================================"
 echo "📦 Configuration loaded from:"
 echo "   - data/user/settings/system.json"
-echo "   - data/user/settings/auth.json"
 echo "   - data/user/settings/integrations.json"
 echo "   - data/user/settings/model_catalog.json"
 echo "   - data/user/settings/main.yaml"

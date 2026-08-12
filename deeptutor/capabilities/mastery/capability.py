@@ -36,21 +36,12 @@ def resolve_mastery_path_id(context: UnifiedContext) -> str:
     """Resolve which learner-path the turn operates on.
 
     Prefers an explicit ``mastery_path_id`` set by the frontend (so the tutor
-    and the build wizard / dashboard agree on one storage key), then a book
-    reference, then the session id for an ad-hoc path built inside a chat.
+    and the build wizard / dashboard agree on one storage key), then the
+    session id for an ad-hoc path built inside a chat.
     """
     explicit = str(context.metadata.get("mastery_path_id") or "").strip()
     if explicit:
         return _sanitize_path_id(explicit)
-    refs = (context.metadata or {}).get("book_references", [])
-    if refs:
-        ref = refs[0]
-        if isinstance(ref, str) and ref.strip():
-            return _sanitize_path_id(ref)
-        if isinstance(ref, dict):
-            candidate = str(ref.get("book_id") or ref.get("id") or "").strip()
-            if candidate:
-                return _sanitize_path_id(candidate)
     return _sanitize_path_id(str(context.session_id or "default"))
 
 

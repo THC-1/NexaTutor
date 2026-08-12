@@ -22,14 +22,12 @@ OnEvent = Callable[[SubagentEvent], Awaitable[None]]
 
 
 class SubagentBackend(ABC):
-    """Drive one subagent (a local CLI, or one of the user's partners)."""
+    """Drive one local agent CLI as a subagent."""
 
     kind: str
     display_name: str
     cli_command: str
-    # Local-CLI backends (Claude Code, Codex) are detected on this machine and
-    # offered in the connect-CLI modal. Non-CLI backends (a Partner) are
-    # connected from their own list, so they sit out machine detection.
+    # Backends are detected on this machine and offered in the connect-CLI modal.
     local_cli: bool = True
 
     @abstractmethod
@@ -46,7 +44,6 @@ class SubagentBackend(ABC):
         session_id: str | None = None,
         config: BackendConfig | None = None,
         images: list[str] | None = None,
-        partner_id: str | None = None,
     ) -> ConsultResult:
         """Put one question to the subagent and stream every native event.
 
@@ -55,9 +52,8 @@ class SubagentBackend(ABC):
         returned :class:`ConsultResult` carries the session id to thread into the
         next consult. ``images`` are local file paths the user forwarded with the
         question (Codex attaches them with ``-i``; Claude Code is pointed at them
-        for its Read tool). ``partner_id`` names the bound partner for the partner
-        backend (the CLI backends ignore it). Waits unconditionally for the
-        subagent to finish — only its own exit (clean or error) ends the consult.
+        for its Read tool). Waits unconditionally for the subagent to finish —
+        only its own exit (clean or error) ends the consult.
         """
 
 

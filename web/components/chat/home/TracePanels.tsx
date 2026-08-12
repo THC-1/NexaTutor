@@ -13,11 +13,6 @@ import { ChevronDown, Loader2, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import MarkdownRenderer from "@/components/common/MarkdownRenderer";
 import { formatTurnDuration, getTurnDurationSeconds } from "@/lib/trace-timing";
-import {
-  describeProviderTool,
-  formatProgressLabel,
-  type ToolProvider,
-} from "@/lib/trace-tools";
 import type { StreamEvent } from "@/lib/unified-ws";
 
 type TraceMetadata = {
@@ -44,16 +39,6 @@ type TraceMetadata = {
   round?: number;
   query?: string;
   tool_name?: string;
-  // Which external provider is running, stamped by the tool dispatcher from the
-  // tool object itself. `"mcp"` or `"cli"`; absent for a built-in. Read rather
-  // than parsed out of the tool name: `mcp_<server>_<tool>` is ambiguous the
-  // moment a server's own name contains an underscore.
-  tool_source?: string;
-  tool_provider?: string;
-  // On a `trace_kind="tool_progress"` event: how far along the provider says it
-  // is (0–1), and how long a CLI app has been running.
-  progress_fraction?: number;
-  elapsed_s?: number;
   block_id?: string;
   trace_layer?: string;
   output_mode?: string;
@@ -170,34 +155,16 @@ type ToolDescriptor = {
  * compact chip naming the artifact it acted on (the command, the file, the
  * query). Falls back to a humanized tool name + generic mark for unknown
  * tools so new tools still read sensibly without a code change.
- *
- * `provider` short-circuits the switch for tools that come from an MCP server
- * or an installed CLI app. Their names are *generated*, so the fallback would
- * title-case a machine string — "Mcp Wolfram Wolframalpha" — and tell the reader
- * neither which service is being used nor what it was asked to do.
  */
 function describeToolCall(
   toolName: string,
   args: Record<string, unknown> | undefined,
   t: (key: string, opts?: Record<string, unknown>) => string,
-  provider?: ToolProvider | null,
 ): ToolDescriptor {
   const a = args ?? {};
   const str = (value: unknown) =>
     typeof value === "string" ? value.trim() : "";
 
-  // An external provider's row is decided in `lib/trace-tools` — the whole
-  // decision is data there, so it is unit-tested; only the glyph is resolved
-  // here, where the marks live.
-  const providerRow = describeProviderTool(toolName, args, provider, t);
-  if (providerRow) {
-    return {
-      Icon: providerRow.glyph === "link" ? LinkMark : CommandMark,
-      verb: providerRow.verb,
-      chip: providerRow.chip,
-      mono: providerRow.mono,
-    };
-  }
   const host = (url: string) => {
     if (!url) return "";
     try {
@@ -208,13 +175,6 @@ function describeToolCall(
   };
 
   switch (toolName) {
-    case "exec":
-      return {
-        Icon: CommandMark,
-        verb: t("Running command"),
-        chip: clip(str(a.command), 48) || null,
-        mono: true,
-      };
     case "code_execution":
       return {
         Icon: CommandMark,
@@ -331,38 +291,10 @@ function describeToolCall(
         chip: null,
         mono: false,
       };
-    case "reason":
-      return {
-        Icon: ReasoningMark,
-        verb: t("Reasoning"),
-        chip: clip(str(a.query)) || null,
-        mono: false,
-      };
-    case "brainstorm":
-      return {
-        Icon: ReasoningMark,
-        verb: t("Brainstorming"),
-        chip: clip(str(a.topic)) || null,
-        mono: false,
-      };
     case "ask_user":
       return {
         Icon: SpeechMark,
         verb: t("Asking you"),
-        chip: null,
-        mono: false,
-      };
-    case "github":
-      return {
-        Icon: ToolMark,
-        verb: t("Querying GitHub"),
-        chip: str(a.target) || null,
-        mono: true,
-      };
-    case "geogebra_analysis":
-      return {
-        Icon: FrameMark,
-        verb: t("Analyzing figure"),
         chip: null,
         mono: false,
       };
@@ -373,8 +305,6 @@ function describeToolCall(
         chip: null,
         mono: false,
       };
-    case "math_animator":
-      return { Icon: FrameMark, verb: t("Animating"), chip: null, mono: false };
     default:
       return {
         Icon: ToolMark,
@@ -408,44 +338,6 @@ function getTraceLabel(
   }
   const fallback = events[0]?.stage || "trace";
   return humanizeQuestionId(titleCase(fallback), t);
-}
-
-/**
- * The external provider this trace's tool belongs to, or null for a built-in.
- *
- * Exported for tests: this and {@link getLatestToolProgress} are the wiring
- * between what the backend stamps on a turn's events and what the row shows, and
- * they are checked against events recorded from a real LLM turn
- * (`tests/fixtures/provider-trace-events.json`).
- *
- * Scanned across the group rather than read off the `tool_call` event alone: the
- * status and progress events carry it too, and a group whose opening event was
- * dropped (a reconnect mid-turn) should still be labelled correctly.
- */
-export function getToolProvider(events: StreamEvent[]): ToolProvider | null {
-  for (const event of events) {
-    const meta = getTraceMeta(event);
-    if (meta.tool_source) {
-      return {
-        source: String(meta.tool_source),
-        id: String(meta.tool_provider || ""),
-      };
-    }
-  }
-  return null;
-}
-
-/** The newest `tool_progress` line in this group, or `""`. */
-export function getLatestToolProgress(events: StreamEvent[]): string {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event.type !== "progress") continue;
-    if (String(getTraceMeta(event).trace_kind || "") !== "tool_progress")
-      continue;
-    const text = event.content.trim();
-    if (text) return formatProgressLabel(text);
-  }
-  return "";
 }
 
 function getTraceCallKind(events: StreamEvent[]) {
@@ -1159,6 +1051,7 @@ function TraceRowBody({
             <span key={`${callId}-source-${idx}`}>
               {idx > 0 && " · "}
               {String(source.title || source.query || source.type || "source")}
+              {source.page ? ` · ${t("Page")} ${String(source.page)}` : ""}
             </span>
           ))}
         </div>
@@ -1313,14 +1206,10 @@ function TraceRowItem({
   // action verb + an artifact chip (the Claude-cowork pattern); retrieval
   // surfaces its query; chat reasoning rounds ARE their text (rendered inline
   // when open, clamped to a preview when folded).
-  const provider = getToolProvider(callEvents);
   const descriptor =
     isToolRow && toolName
-      ? describeToolCall(toolName, toolArgs, t, provider)
+      ? describeToolCall(toolName, toolArgs, t)
       : null;
-  // What the provider last said about its own progress. Only MCP servers and
-  // CLI apps publish these, and only while the call is open.
-  const liveStatus = active ? getLatestToolProgress(callEvents) : "";
 
   let resolvedIcon: GlyphComponent;
   let headline: string;
@@ -1332,10 +1221,6 @@ function TraceRowItem({
     chip = descriptor.chip
       ? { text: descriptor.chip, mono: descriptor.mono }
       : null;
-    // While it runs, how far along it is displaces what it is: the identity is
-    // already in the verb, and "fetching pages (30%)" is the only thing that
-    // distinguishes a working call from a hung one. It reverts once settled.
-    if (liveStatus) chip = { text: liveStatus, mono: false };
     // Name the consult after the agent it targets (e.g. "Consult Subagent
     // test-cc"); the name rides on the streamed subagent events in the group.
     if (toolName === "consult_subagent") {
@@ -1930,24 +1815,6 @@ function CommandMark(props: MarkProps) {
   );
 }
 
-/** A connected service — two half-rings coupled by a short bar, reading as a
- *  link rather than a socket. Used for MCP servers: the row is naming something
- *  outside NexaTutor that the turn is talking to. */
-function LinkMark(props: MarkProps) {
-  return (
-    <MarkSvg {...props}>
-      {/* Two open hooks joined by a diagonal — a chain link. Drawn open rather
-          than as two closed rings: a closed pair reads as a globe at 15px, which
-          is the glyph web tools already use. */}
-      <g transform="rotate(-4 12 12)">
-        <path d="M10.4 13.6 L13.6 10.4" />
-        <path d="M9.2 11.1 L7.7 12.6 A 2.7 2.7 0 0 0 11.5 16.4 L13 14.9" />
-        <path d="M14.8 12.9 L16.3 11.4 A 2.7 2.7 0 0 0 12.5 7.6 L11 9.1" />
-      </g>
-    </MarkSvg>
-  );
-}
-
 /** Web — an organic globe: a soft sphere with two meridian sweeps and one
  *  off-centre latitude line. */
 function GlobeMark(props: MarkProps) {
@@ -2267,12 +2134,11 @@ export function StreamingStatus({
   expandable?: boolean;
   expanded?: boolean;
   onToggle?: () => void;
-  // Who is doing the thinking — partner chat passes the partner's name so
-  // the status reads "Ada Exploring…" instead of the product name.
+  // Who is doing the thinking — imported agent sessions can pass the agent's
+  // name so the status reads "Ada Exploring…" instead of the product name.
   agentName?: string;
-  // Partner chat shows the partner avatar beside this row, which already
-  // signals "who / working", so it hides the activity mark to avoid two
-  // icons fighting on one line.
+  // An embedding surface can show its own avatar beside this row and hide the
+  // activity mark to avoid two icons competing on one line.
   showMark?: boolean;
 }) {
   const { t } = useTranslation();
@@ -2529,7 +2395,7 @@ export function AssistantActivity({
   className?: string;
   /** Forwarded to StreamingStatus — names the thinker in the status row. */
   agentName?: string;
-  /** Hide the activity mark (partner chat shows its avatar instead). */
+  /** Hide the activity mark when the embedding surface supplies one. */
   showMark?: boolean;
   /** Extra classes on the status header row (e.g. a min-height so the row
    *  vertically centers against an adjacent avatar). */

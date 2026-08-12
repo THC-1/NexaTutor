@@ -56,7 +56,7 @@ def _stub_resolver(
         return manifests.get(kb_ref)
 
     monkeypatch.setattr(
-        "deeptutor.multi_user.knowledge_access.resolve_kb_manifest", _resolve, raising=False
+        "deeptutor.services.local_workspace.resolve_kb_manifest", _resolve, raising=False
     )
     return asked
 
@@ -109,22 +109,6 @@ async def test_every_attached_kb_is_described(monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.asyncio
-async def test_pageindex_kbs_are_not_described_twice(monkeypatch: pytest.MonkeyPatch) -> None:
-    """PageIndex's own note already lists its documents, with their doc_ids."""
-    pipeline = _pipeline(monkeypatch)
-    pipeline._pageindex_docs = {"hosted": {"paper.pdf": "doc-1"}}
-    asked = _stub_resolver(monkeypatch, {"course": _manifest("course", "a.pdf")})
-    context = UnifiedContext(
-        session_id="s1", user_message="how many?", knowledge_bases=["course", "hosted"]
-    )
-
-    await pipeline._prepare_kb_manifests(context)
-
-    assert asked == ["course"]
-    assert [manifest.name for manifest in pipeline._kb_manifests] == ["course"]
-
-
-@pytest.mark.asyncio
 async def test_no_kb_attached_yields_no_inventory(monkeypatch: pytest.MonkeyPatch) -> None:
     pipeline = _pipeline(monkeypatch)
     asked = _stub_resolver(monkeypatch, {})
@@ -165,7 +149,7 @@ async def test_unreadable_kb_costs_the_manifest_not_the_turn(
         return _manifest(kb_ref, "a.pdf")
 
     monkeypatch.setattr(
-        "deeptutor.multi_user.knowledge_access.resolve_kb_manifest", _boom, raising=False
+        "deeptutor.services.local_workspace.resolve_kb_manifest", _boom, raising=False
     )
     context = UnifiedContext(
         session_id="s1", user_message="how many?", knowledge_bases=["broken", "course"]

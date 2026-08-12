@@ -31,8 +31,6 @@ import {
 } from "@/lib/file-attachments";
 import { listKnowledgeBases } from "@/lib/knowledge-api";
 import { listLLMOptions, type LLMOption } from "@/lib/llm-options";
-import { selectedBooksToPayload } from "@/lib/book-references";
-import type { SelectedBookReference } from "@/lib/book-references";
 import type { SelectedHistorySession } from "@/components/chat/HistorySessionPicker";
 import type { SelectedQuestionEntry } from "@/components/chat/QuestionBankPicker";
 import type { SelectedRecord } from "@/lib/notebook-selection-types";
@@ -57,10 +55,6 @@ const PersonaPicker = dynamic(() => import("@/components/chat/PersonaPicker"), {
 const MemoryPicker = dynamic(() => import("@/components/chat/MemoryPicker"), {
   ssr: false,
 });
-const BookReferencePicker = dynamic(
-  () => import("@/components/chat/BookReferencePicker"),
-  { ssr: false },
-);
 
 interface KnowledgeBase {
   name: string;
@@ -119,9 +113,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
   const [selectedKnowledgeBases, setSelectedKnowledgeBases] = useState<
     string[]
   >([]);
-  const [selectedBookReferences, setSelectedBookReferences] = useState<
-    SelectedBookReference[]
-  >([]);
   const [selectedNotebookRecords, setSelectedNotebookRecords] = useState<
     SelectedRecord[]
   >([]);
@@ -138,7 +129,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
 
   // ── Picker dialog visibility ──────────────────────────────────
   const [showNotebookPicker, setShowNotebookPicker] = useState(false);
-  const [showBookPicker, setShowBookPicker] = useState(false);
   const [showHistoryPicker, setShowHistoryPicker] = useState(false);
   const [showQuestionBankPicker, setShowQuestionBankPicker] = useState(false);
   const [showPersonaPicker, setShowPersonaPicker] = useState(false);
@@ -378,9 +368,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
   const handleSelectNotebookPicker = useCallback(() => {
     setShowNotebookPicker(true);
   }, []);
-  const handleSelectBookPicker = useCallback(() => {
-    setShowBookPicker(true);
-  }, []);
   const handleSelectHistoryPicker = useCallback(() => {
     setShowHistoryPicker(true);
   }, []);
@@ -408,11 +395,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
       prev.filter((s) => s.sessionId !== sessionId),
     );
   }, []);
-  const handleRemoveBookReference = useCallback((bookId: string) => {
-    setSelectedBookReferences((prev) =>
-      prev.filter((b) => b.bookId !== bookId),
-    );
-  }, []);
   const handleRemoveNotebook = useCallback((notebookId: string) => {
     setSelectedNotebookRecords((prev) =>
       prev.filter((r) => r.notebookId !== notebookId),
@@ -435,10 +417,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
       record_ids,
     }));
   }, [selectedNotebookRecords]);
-  const bookReferencesPayload = useMemo(
-    () => selectedBooksToPayload(selectedBookReferences),
-    [selectedBookReferences],
-  );
   const historyReferencesPayload = useMemo(
     () => selectedHistorySessions.map((s) => s.sessionId),
     [selectedHistorySessions],
@@ -473,7 +451,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
       const hasReferences =
         attachments.length > 0 ||
         selectedKnowledgeBases.length > 0 ||
-        selectedBookReferences.length > 0 ||
         selectedNotebookRecords.length > 0 ||
         selectedHistorySessions.length > 0 ||
         selectedQuestionEntries.length > 0 ||
@@ -547,7 +524,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
         knowledgeBases: selectedKnowledgeBases,
         notebookReferences: notebookReferencesPayload,
         historyReferences: historyReferencesPayload,
-        bookReferences: bookReferencesPayload,
         questionNotebookReferences: questionNotebookReferencesPayload,
         persona: personaPayload,
         llmSelection,
@@ -555,7 +531,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
 
       // Wipe transient selections — the chat session now owns them.
       setAttachments([]);
-      setSelectedBookReferences([]);
       setSelectedNotebookRecords([]);
       setSelectedHistorySessions([]);
       setSelectedQuestionEntries([]);
@@ -564,7 +539,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
     },
     [
       attachments,
-      bookReferencesPayload,
       context,
       controller,
       historyReferencesPayload,
@@ -572,7 +546,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
       memoryReferencesPayload,
       notebookReferencesPayload,
       questionNotebookReferencesPayload,
-      selectedBookReferences.length,
       selectedHistorySessions.length,
       selectedKnowledgeBases,
       selectedMemoryFiles,
@@ -627,7 +600,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
         llmSelection={llmSelection}
         llmOptionsLoading={llmOptionsLoading}
         llmOptionsError={llmOptionsError}
-        selectedBookReferences={selectedBookReferences}
         selectedNotebookRecords={selectedNotebookRecords}
         selectedHistorySessions={selectedHistorySessions}
         selectedAgentSessions={[]}
@@ -647,7 +619,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
         onToggleKB={handleToggleKB}
         onSelectLLM={setLLMSelection}
         onSelectNotebookPicker={handleSelectNotebookPicker}
-        onSelectBookPicker={handleSelectBookPicker}
         onSelectHistoryPicker={handleSelectHistoryPicker}
         agentsAvailable={false}
         onSelectAgentsPicker={() => {}}
@@ -660,7 +631,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
         onRemoveAttachment={removeAttachment}
         onRemoveHistory={handleRemoveHistory}
         onRemoveAgent={() => {}}
-        onRemoveBookReference={handleRemoveBookReference}
         onRemoveNotebook={handleRemoveNotebook}
         onRemoveQuestion={handleRemoveQuestion}
         onDragEnter={handleDragEnter}
@@ -682,15 +652,6 @@ function FollowupChatComposerImpl({ context }: FollowupChatComposerProps) {
         onApply={(records: SelectedRecord[]) => {
           setSelectedNotebookRecords(records);
           setShowNotebookPicker(false);
-        }}
-      />
-      <BookReferencePicker
-        open={showBookPicker}
-        initialReferences={selectedBookReferences}
-        onClose={() => setShowBookPicker(false)}
-        onApply={(refs: SelectedBookReference[]) => {
-          setSelectedBookReferences(refs);
-          setShowBookPicker(false);
         }}
       />
       <HistorySessionPicker

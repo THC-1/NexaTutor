@@ -40,8 +40,6 @@ type Surface =
   | "notebook"
   | "quiz"
   | "kb"
-  | "book"
-  | "partner"
   | "cowriter";
 
 const SURFACES: readonly Surface[] = [
@@ -49,8 +47,6 @@ const SURFACES: readonly Surface[] = [
   "notebook",
   "quiz",
   "kb",
-  "book",
-  "partner",
   "cowriter",
 ] as const;
 
@@ -146,8 +142,6 @@ const SURFACE_META: Record<Surface, SurfaceMeta> = {
   notebook: { icon: NotebookPen, label: "Notebook" },
   quiz: { icon: ClipboardList, label: "题库" },
   kb: { icon: BookOpen, label: "Knowledge base" },
-  book: { icon: Library, label: "Book" },
-  partner: { icon: Bot, label: "Partner" },
   cowriter: { icon: PenLine, label: "Co-writer" },
 };
 
@@ -160,9 +154,9 @@ const L3_LABELS: Record<string, string> = {
 
 // Entity refs in L2/L3 docs are written as `<surface>:<entity_id>`.
 // The id portion is intentionally permissive (notebook record_id, doc_id,
-// book_id, bot name, session_id, "session:question" composites, kb_name).
+// bot name, session_id, "session:question" composites, kb_name).
 const ENTITY_REF_RE =
-  /\b(chat|notebook|quiz|kb|book|partner|cowriter):[A-Za-z0-9_.\-:]+/g;
+  /\b(chat|notebook|quiz|kb|cowriter):[A-Za-z0-9_.\-:]+/g;
 
 function entityAnchorId(ref: string): string {
   // Anchor IDs can't contain ':' cleanly across CSS selectors — flatten
@@ -228,15 +222,6 @@ function entityDeepLinkUrl(surface: Surface, ent: Entity): string | null {
       return nbId
         ? `/space/notebooks?notebook=${encodeURIComponent(nbId)}`
         : "/space/notebooks";
-    }
-    case "book":
-      return `/book?book=${encodeURIComponent(ent.id)}`;
-    case "partner": {
-      // Partner entity.id is `partnerId:sessionKey`. Deep-link to the partner.
-      const partnerId = asString(m.partner_id) || ent.id.split(":")[0];
-      return partnerId
-        ? `/partners/${encodeURIComponent(partnerId)}`
-        : "/partners";
     }
     case "quiz": {
       // Quiz entity.id is `session:question`. Deep-link to the session.

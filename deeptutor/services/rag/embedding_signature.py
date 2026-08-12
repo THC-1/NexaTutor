@@ -41,7 +41,7 @@ def embedding_meta_fields() -> dict[str, Any]:
     """Embedding identity fields to stamp into a version's ``meta.json``.
 
     LlamaIndex versions already record the full signature; the graph engines
-    (GraphRAG/LightRAG) use a synthetic provider signature, so they stamp these
+    Removed providers used synthetic signatures, so legacy metadata may contain these
     extra fields at build time. The probe used when *linking* an external index
     reads them to verify the index was built with a compatible embedding model
     — without which graph engines fail retrieval silently on a mismatch.

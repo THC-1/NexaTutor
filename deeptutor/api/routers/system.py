@@ -9,7 +9,7 @@ import time
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from deeptutor.multi_user.context import get_current_user
+from deeptutor.services.local_workspace import get_local_user
 from deeptutor.services.config import resolve_search_runtime_config
 from deeptutor.services.embedding import get_embedding_client, get_embedding_config
 from deeptutor.services.llm import complete as llm_complete
@@ -53,7 +53,6 @@ async def get_runtime_topology():
         ],
         "isolated_subsystems": [
             {"router": "co_writer", "mode": "independent_subsystem"},
-            {"router": "plugins_api", "mode": "playground_transport"},
         ],
     }
 
@@ -137,7 +136,7 @@ async def get_system_status():
     # Non-admin users have no need to know which model the admin configured;
     # exposing the name leaks operational detail and would let curious users
     # fingerprint the deployment. Strip the identifying fields.
-    if not get_current_user().is_admin:
+    if not get_local_user().is_admin:
         for section in ("llm", "embeddings"):
             result[section].pop("model", None)
         result["search"].pop("provider", None)

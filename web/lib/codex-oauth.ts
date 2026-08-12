@@ -126,7 +126,6 @@ export async function requestCodex<T>(
 ): Promise<T> {
   const response = await fetchImpl(apiUrl(`${BASE}${path}`), {
     method,
-    skipAuthRedirect: true,
   });
   if (response.ok) {
     try {

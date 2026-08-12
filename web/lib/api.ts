@@ -37,60 +37,10 @@ export function wsUrl(path: string): string {
   return path;
 }
 
-/**
- * Parse a "DEEPTUTOR_AUTH_ENABLED"-style flag at runtime.
- *
- * Used by both `apiFetch` (frontend) and `web/proxy.ts` (auth redirect) to
- * decide whether to gate requests. Evaluated with a runtime regex so the
- * value can be set by the container entrypoint on every start (no build-time
- * inlining).
- */
-export function parseAuthEnabled(raw: string | undefined): boolean {
-  return /^(1|true|yes|on)$/i.test((raw ?? "").trim());
-}
-
-// Whether auth is enabled, learned at runtime — NOT from a build-time env var.
-// The browser bundle never sees `DEEPTUTOR_AUTH_ENABLED` (it isn't a
-// `NEXT_PUBLIC_` var, so Next.js does not inline it), and auth is a runtime
-// setting that must not be baked at build time anyway. `fetchAuthStatus()` in
-// `web/lib/auth.ts` calls `setRuntimeAuthEnabled()` once the backend reports the
-// real state. Until then it defaults to `false`, so a stray 401 in the default
-// auth-disabled deployment never bounces the user to /login. The server-side
-// gate (web/proxy.ts middleware) enforces auth independently; this flag only
-// drives the client's in-session 401 → /login redirect.
-let runtimeAuthEnabled = false;
-
-/** Record the backend-reported auth state for `apiFetch`'s 401 redirect gate. */
-export function setRuntimeAuthEnabled(enabled: boolean): void {
-  runtimeAuthEnabled = enabled;
-}
-
-/**
- * Authenticated fetch wrapper. Behaves identically to `fetch` but automatically
- * redirects to /login when the backend returns 401 (expired / invalid token).
- *
- * Pass `skipAuthRedirect: true` for endpoints where a 401 is an expected,
- * recoverable response that the caller wants to handle inline — most notably
- * the login/register endpoints, where 401 means "wrong credentials" and must
- * surface as a form error rather than reload the page.
- */
+/** Fetch wrapper retained as the shared seam for local API requests. */
 export async function apiFetch(
   input: RequestInfo | URL,
-  init?: RequestInit & { skipAuthRedirect?: boolean },
+  init?: RequestInit,
 ): Promise<Response> {
-  const { skipAuthRedirect, ...fetchInit } = init ?? {};
-  const res = await fetch(input, { credentials: "include", ...fetchInit });
-
-  if (
-    res.status === 401 &&
-    runtimeAuthEnabled &&
-    !skipAuthRedirect &&
-    typeof window !== "undefined"
-  ) {
-    const next = encodeURIComponent(window.location.pathname);
-    window.location.href = `/login?next=${next}`;
-    return new Promise(() => {});
-  }
-
-  return res;
+  return fetch(input, init);
 }

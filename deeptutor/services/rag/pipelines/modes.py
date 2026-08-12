@@ -1,4 +1,4 @@
-"""Shared retrieval-mode resolution for mode-aware pipelines (LightRAG, GraphRAG).
+"""Shared retrieval-mode resolution for mode-aware pipelines.
 
 Resolution order, first valid wins:
 

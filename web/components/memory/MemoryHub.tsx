@@ -8,7 +8,6 @@ import {
   Layers,
   Network,
   RefreshCw,
-  Sparkles,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
@@ -41,8 +40,6 @@ const SURFACES = [
   "notebook",
   "quiz",
   "kb",
-  "book",
-  "partner",
   "cowriter",
 ] as const;
 
@@ -98,7 +95,7 @@ export default function MemoryHub() {
         </div>
         <p className="max-w-2xl text-[14px] text-[var(--muted-foreground)] md:text-[15px]">
           {t(
-            "Everything NexaTutor remembers about you, organised across three layers. Click into any layer to inspect or curate it.",
+            "Review the things that shape your learning. The L1, L2, and L3 layers remain available when you need more detail.",
           )}
         </p>
         <div className="flex items-center gap-3 text-[12px] text-[var(--muted-foreground)]">
@@ -162,48 +159,35 @@ export default function MemoryHub() {
         />
       </div>
 
-      <GraphCallout />
+      <section className="space-y-3">
+        <h2 className="text-[15px] font-semibold text-[var(--foreground)]">
+          {t("Your learning memory")}
+        </h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <MemoryLink href="/memory/l3/preferences" title={t("User preferences")} detail={t("How you like to learn and receive answers.")} />
+          <MemoryLink href="/memory/l3/profile" title={t("Learning goals")} detail={t("Your goals, learning style, and current knowledge level.")} />
+          <MemoryLink href="/memory/l3/profile" title={t("Current knowledge level")} detail={t("The tutor's current picture of what you know.")} />
+          <MemoryLink href="/memory/l3/recent" title={t("Recent learning")} detail={t("A rolling summary of what you have studied lately.")} />
+          <MemoryLink href="/memory/l2/chat" title={t("Saved long-term memories")} detail={t("Facts you can review and edit across learning surfaces.")} />
+        </div>
+      </section>
 
       <MemoryArchivedBanner latestBackup={latestBackup} variant="compact" />
     </div>
   );
 }
 
-function GraphCallout() {
-  const { t } = useTranslation();
+function MemoryLink({ href, title, detail }: { href: string; title: string; detail: string }) {
   return (
     <Link
-      href="/memory/graph"
-      className="group relative block overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 transition hover:-translate-y-[1px] hover:border-[var(--primary)]/40 hover:shadow-sm"
+      href={href}
+      className="group flex min-h-28 flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 transition hover:border-[var(--primary)]/40"
     >
-      <div
-        className="pointer-events-none absolute inset-0 opacity-80"
-        style={{
-          background:
-            "radial-gradient(ellipse 60% 80% at 92% 50%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 70%)",
-        }}
-      />
-      <div className="relative flex items-center gap-5">
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-[var(--primary)]/10 text-[var(--primary)]">
-          <Sparkles className="h-5 w-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-[15px] font-semibold text-[var(--foreground)]">
-              {t("Memory graph")}
-            </h3>
-            <span className="rounded-full border border-[var(--border)] bg-[var(--background)]/60 px-2 py-0.5 text-[10.5px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-              {t("New")}
-            </span>
-          </div>
-          <p className="mt-1 text-[13px] leading-relaxed text-[var(--muted-foreground)]">
-            {t(
-              "See all three layers at once — L3 synthesis at the centre, L2 facts in the middle, L1 traces on the outside. Hover any node for a preview.",
-            )}
-          </p>
-        </div>
-        <ArrowRight className="hidden h-4 w-4 shrink-0 text-[var(--primary)] transition group-hover:translate-x-0.5 md:block" />
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-[13px] font-semibold text-[var(--foreground)]">{title}</h3>
+        <ArrowRight className="h-3.5 w-3.5 text-[var(--muted-foreground)] transition group-hover:translate-x-0.5" />
       </div>
+      <p className="text-[12px] leading-relaxed text-[var(--muted-foreground)]">{detail}</p>
     </Link>
   );
 }

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-from deeptutor.api.routers import auth as auth_router
+from deeptutor.api.routers import codex_callback
 from deeptutor.services.codex_auth.contracts import CodexAuthError
 from deeptutor.services.codex_auth.oauth import oauth_state_matches
 
@@ -44,12 +44,12 @@ def _client(
     service: FakeCodexOAuthService,
 ) -> TestClient:
     monkeypatch.setattr(
-        auth_router,
+        codex_callback,
         "deliver_codex_oauth_callback",
         service.receive_callback,
     )
     app = FastAPI()
-    app.include_router(auth_router.router, prefix="/api/v1/auth")
+    app.include_router(codex_callback.router, prefix="/api/v1/auth")
     return TestClient(app)
 
 
@@ -71,7 +71,7 @@ def test_codex_callback_endpoint_delivers_without_echoing_secrets(
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["content-type"].startswith("text/html")
-    assert "Authentication received. You can return to DeepTutor." in response.text
+    assert "Authentication received. You can return to NexaTutor." in response.text
     assert service.received == [
         ("private-code", "private-state", "private-error"),
     ]

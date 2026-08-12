@@ -12,13 +12,11 @@ data/user/
     ├── memory/
     ├── notebook/
     ├── co-writer/
-    ├── book/
     └── chat/
         ├── chat/
         ├── deep_solve/
         ├── deep_question/
         ├── deep_research/
-        ├── math_animator/
         └── _detached_code_execution/
 """
 
@@ -35,7 +33,6 @@ AgentModule = Literal[
     "co-writer",
     "run_code_workspace",
     "logs",
-    "math_animator",
 ]
 
 ChatWorkspaceFeature = Literal[
@@ -43,7 +40,6 @@ ChatWorkspaceFeature = Literal[
     "deep_solve",
     "deep_question",
     "deep_research",
-    "math_animator",
     "_detached_code_execution",
 ]
 
@@ -52,7 +48,6 @@ WorkspaceFeature = Literal[
     "notebook",
     "co-writer",
     "chat",
-    "book",
 ]
 
 
@@ -71,7 +66,6 @@ class PathService:
         "chat": ("chat", "chat"),
         "question": ("chat", "deep_question"),
         "research": ("chat", "deep_research"),
-        "math_animator": ("chat", "math_animator"),
         "co-writer": ("co-writer", None),
         "run_code_workspace": ("chat", "_detached_code_execution"),
     }
@@ -161,17 +155,10 @@ class PathService:
         ):
             return True
 
-        if (
-            len(parts) >= 5
-            and parts[:3] == ("workspace", "chat", "math_animator")
-            and "artifacts" in parts[4:]
-        ):
-            return True
-
         if len(parts) >= 5 and parts[:2] == ("workspace", "chat") and "code_runs" in parts[3:]:
             return True
 
-        # Generated media (imagegen / videogen tools write under <task>/media/).
+        # Generated media (the imagegen tool writes under <task>/media/).
         if len(parts) >= 5 and parts[:2] == ("workspace", "chat") and "media" in parts[3:]:
             return True
 
@@ -229,11 +216,10 @@ class PathService:
             "deep_solve",
             "deep_question",
             "deep_research",
-            "math_animator",
             "_detached_code_execution",
         }:
             return self.get_chat_feature_dir(cast(ChatWorkspaceFeature, feature))
-        if feature in {"memory", "notebook", "co-writer", "book"}:
+        if feature in {"memory", "notebook", "co-writer"}:
             return self.get_workspace_feature_dir(cast(WorkspaceFeature, feature))
         raise ValueError(f"Unknown workspace feature: {feature}")
 
@@ -326,47 +312,6 @@ class PathService:
     def get_co_writer_doc_manifest(self, doc_id: str) -> Path:
         return self.get_co_writer_doc_root(doc_id) / "manifest.json"
 
-    # ── Book Engine paths ────────────────────────────────────────────────
-
-    def get_book_dir(self) -> Path:
-        """Root directory holding all books (one sub-directory per book)."""
-        return self.get_workspace_feature_dir("book")
-
-    def get_book_root(self, book_id: str) -> Path:
-        """Per-book root directory."""
-        return self.get_book_dir() / f"book_{book_id}"
-
-    def get_book_manifest_file(self, book_id: str) -> Path:
-        return self.get_book_root(book_id) / "manifest.json"
-
-    def get_book_spine_file(self, book_id: str) -> Path:
-        return self.get_book_root(book_id) / "spine.json"
-
-    def get_book_progress_file(self, book_id: str) -> Path:
-        return self.get_book_root(book_id) / "progress.json"
-
-    def get_book_inputs_file(self, book_id: str) -> Path:
-        return self.get_book_root(book_id) / "inputs.json"
-
-    def get_book_log_file(self, book_id: str) -> Path:
-        return self.get_book_root(book_id) / "log.md"
-
-    def get_book_pages_dir(self, book_id: str) -> Path:
-        return self.get_book_root(book_id) / "pages"
-
-    def get_book_page_file(self, book_id: str, page_id: str) -> Path:
-        return self.get_book_pages_dir(book_id) / f"{page_id}.json"
-
-    def get_book_assets_dir(self, book_id: str) -> Path:
-        return self.get_book_root(book_id) / "assets"
-
-    def ensure_book_root(self, book_id: str) -> Path:
-        root = self.get_book_root(book_id)
-        root.mkdir(parents=True, exist_ok=True)
-        (root / "pages").mkdir(parents=True, exist_ok=True)
-        (root / "assets").mkdir(parents=True, exist_ok=True)
-        return root
-
     def get_run_code_workspace_dir(self) -> Path:
         return self.get_chat_feature_dir("_detached_code_execution")
 
@@ -409,7 +354,7 @@ class PathService:
         self.ensure_memory_dir()
         self.ensure_notebook_dir()
         self.get_logs_dir().mkdir(parents=True, exist_ok=True)
-        for workspace_feature in cast(tuple[WorkspaceFeature, ...], ("co-writer", "book")):
+        for workspace_feature in cast(tuple[WorkspaceFeature, ...], ("co-writer",)):
             self.get_workspace_feature_dir(workspace_feature).mkdir(parents=True, exist_ok=True)
         for chat_feature in cast(
             tuple[ChatWorkspaceFeature, ...],
@@ -418,7 +363,6 @@ class PathService:
                 "deep_solve",
                 "deep_question",
                 "deep_research",
-                "math_animator",
                 "_detached_code_execution",
             ),
         ):
@@ -429,18 +373,7 @@ class PathService:
 
 
 def get_path_service() -> PathService:
-    try:
-        from deeptutor.multi_user.paths import get_current_path_service
-
-        return get_current_path_service()
-    except Exception:
-        import logging as _logging
-
-        _logging.getLogger(__name__).warning(
-            "get_path_service() fell back to default instance; multi-user path resolution failed",
-            exc_info=True,
-        )
-        return PathService.get_instance()
+    return PathService.get_instance()
 
 
 __all__ = [

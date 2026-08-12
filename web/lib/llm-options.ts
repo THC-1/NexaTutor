@@ -35,7 +35,7 @@ export function sameLLMSelection(
 /** List the configured model profiles.
  *
  *  Cached so the many consumers that need the model list (composer, model
- *  picker, capability gate, partner forms) share one round-trip instead of
+ *  picker, capability gate) share one round-trip instead of
  *  each firing their own on mount. Editing a profile calls
  *  ``invalidateLLMOptionsCache``; pass ``force`` to bypass the cache. */
 export async function listLLMOptions(options?: {

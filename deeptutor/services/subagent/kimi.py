@@ -122,7 +122,6 @@ class KimiBackend(SubagentBackend):
         session_id: str | None = None,
         config: BackendConfig | None = None,
         images: list[str] | None = None,  # noqa: ARG002 — no headless image input
-        partner_id: str | None = None,  # noqa: ARG002 — partner-only; ignored here
     ) -> ConsultResult:
         config = config or BackendConfig()
         # Mint the session id ourselves (a nonexistent --session id creates the

@@ -19,15 +19,14 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-from deeptutor.multi_user.context import get_current_user
-from deeptutor.multi_user.model_access import allowed_llm_options
+from deeptutor.services.local_workspace import get_local_user
 from deeptutor.services.codex_auth import CodexAuthError, get_codex_oauth_service
 from deeptutor.services.config import (
     get_config_test_runner,
     get_model_catalog_service,
     get_runtime_settings_service,
 )
-from deeptutor.services.config.origins import normalize_origins
+from deeptutor.services.config.model_catalog import ModelCatalogService
 from deeptutor.services.config.runtime_settings import (
     CHAT_ATTACHMENT_CHARS_RANGE,
     CHAT_ATTACHMENT_MAX_FILE_MB_RANGE,
@@ -72,6 +71,10 @@ DEFAULT_SIDEBAR_NAV_ORDER = {
     "learnResearch": ["/question", "/solver", "/research", "/co_writer"],
 }
 
+DEFAULT_ENABLED_OPTIONAL_TOOLS = [
+    name for name in USER_TOGGLEABLE_TOOL_NAMES if name != "code_execution"
+]
+
 DEFAULT_UI_SETTINGS = {
     # theme / language / response_language come from the module that owns
     # interface.json, so the two readers of that file can't drift on what a
@@ -83,7 +86,7 @@ DEFAULT_UI_SETTINGS = {
     # is the single switchboard. Removed names (e.g. tools that ship later
     # and the user hasn't seen yet) are ignored on read; missing names from a
     # legacy file fall back to the default (all on).
-    "enabled_optional_tools": list(USER_TOGGLEABLE_TOOL_NAMES),
+    "enabled_optional_tools": list(DEFAULT_ENABLED_OPTIONAL_TOOLS),
     # When true, chat auto-plays each assistant reply via TTS. Per-user UI
     # preference (not catalog); the chat surface also keeps a per-session
     # override on top of this global default.
@@ -180,8 +183,6 @@ class FetchModelsPayload(BaseModel):
 class NetworkSettingsUpdate(BaseModel):
     backend_port: int = Field(ge=1, le=65535)
     frontend_port: int = Field(ge=1, le=65535)
-    public_api_base: str = ""
-    cors_origins: list[str] = Field(default_factory=list)
 
 
 class ChatAttachmentSettingsUpdate(BaseModel):
@@ -306,7 +307,7 @@ def load_ui_settings() -> dict[str, Any]:
 
 def _sanitize_enabled_tools(value: Any) -> list[str]:
     if not isinstance(value, list):
-        return list(USER_TOGGLEABLE_TOOL_NAMES)
+        return list(DEFAULT_ENABLED_OPTIONAL_TOOLS)
     allowed = set(USER_TOGGLEABLE_TOOL_NAMES)
     seen: set[str] = set()
     out: list[str] = []
@@ -324,12 +325,7 @@ def get_enabled_optional_tools() -> list[str]:
     explicit ``tools`` list. Intersected with the admin grant whitelist so
     a restricted user's saved toggles can't resurrect a revoked tool.
     """
-    from deeptutor.multi_user.tool_access import allowed_optional_tools
-
     enabled = _sanitize_enabled_tools(load_ui_settings().get("enabled_optional_tools"))
-    allowed = allowed_optional_tools()
-    if allowed is not None:
-        enabled = [name for name in enabled if name in allowed]
     return enabled
 
 
@@ -341,7 +337,7 @@ def save_ui_settings(settings: dict[str, Any]) -> None:
 
 
 def _require_settings_admin() -> None:
-    if not get_current_user().is_admin:
+    if not get_local_user().is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Model configuration is managed by an administrator.",
@@ -349,7 +345,7 @@ def _require_settings_admin() -> None:
 
 
 def _require_codex_oauth_actor() -> None:
-    """Gate the Codex OAuth lifecycle: personal, not administrative.
+    """Hook for actor-specific Codex OAuth policy.
 
     Every one of these endpoints acts on the *caller's own* credentials —
     ``get_codex_oauth_service()`` resolves the store, the model catalog, and
@@ -358,18 +354,8 @@ def _require_codex_oauth_actor() -> None:
     profile is (correctly) never grantable, and they could not sign in for
     themselves either (#781).
 
-    A partner is refused: it is a synthetic user whose owner is a real
-    account, so letting one in would mean acting on that person's login —
-    including signing them out. Partners inherit the owner's login at call
-    time and need no lifecycle of their own.
+    Retained as a policy seam for the later Auth / LocalUserContext migration.
     """
-    from deeptutor.services.partners.scope import is_partner_user_id
-
-    if is_partner_user_id(get_current_user().id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="A partner uses the Codex login of the account that owns it.",
-        )
 
 
 def _codex_http_exception(error: CodexAuthError) -> HTTPException:
@@ -389,7 +375,6 @@ def _provider_choices() -> dict[str, list[dict[str, Any]]]:
         IMAGEGEN_PROVIDERS,
         STT_PROVIDERS,
         TTS_PROVIDERS,
-        VIDEOGEN_PROVIDERS,
     )
     from deeptutor.services.provider_registry import PROVIDERS
 
@@ -471,18 +456,6 @@ def _provider_choices() -> dict[str, list[dict[str, Any]]]:
         ],
         key=lambda p: p["label"].lower(),
     )
-    videogen = sorted(
-        [
-            {
-                "value": name,
-                "label": spec.label,
-                "base_url": spec.default_api_base,
-                "default_model": spec.default_model,
-            }
-            for name, spec in VIDEOGEN_PROVIDERS.items()
-        ],
-        key=lambda p: p["label"].lower(),
-    )
     return {
         "llm": llm,
         "embedding": embedding,
@@ -490,57 +463,22 @@ def _provider_choices() -> dict[str, list[dict[str, Any]]]:
         "tts": tts,
         "stt": stt,
         "imagegen": imagegen,
-        "videogen": videogen,
     }
-
-
-def _api_base_source(system: dict[str, Any]) -> str:
-    if system.get("next_public_api_base_external"):
-        return "next_public_api_base_external"
-    if system.get("next_public_api_base"):
-        return "next_public_api_base"
-    return "default_backend_url"
 
 
 def _network_settings_payload() -> dict[str, Any]:
     service = get_runtime_settings_service()
     file_system = service.load_system(include_process_overrides=False)
     effective_system = service.load_system(include_process_overrides=True)
-    auth = service.load_auth(include_process_overrides=True)
     backend_url = f"http://localhost:{effective_system['backend_port']}"
-    browser_api_base = (
-        effective_system["next_public_api_base_external"]
-        or effective_system["next_public_api_base"]
-        or backend_url
-    )
-    cors_origins = normalize_origins(
-        [effective_system["cors_origin"], effective_system["cors_origins"]]
-    )
-    auth_enabled = bool(auth["enabled"])
-    cookie_secure = bool(auth["cookie_secure"])
     return {
         "settings": {
             "backend_port": file_system["backend_port"],
             "frontend_port": file_system["frontend_port"],
-            "public_api_base": file_system["next_public_api_base_external"],
-            "cors_origins": normalize_origins(
-                [file_system["cors_origin"], file_system["cors_origins"]]
-            ),
         },
         "effective": {
             "backend_url": backend_url,
             "frontend_url": f"http://localhost:{effective_system['frontend_port']}",
-            "browser_api_base": browser_api_base,
-            "api_base_source": _api_base_source(effective_system),
-            "cors_mode": "explicit" if auth_enabled else "permissive",
-            "cors_origins": cors_origins,
-            "allow_remote_http_origins": not auth_enabled,
-        },
-        "auth": {
-            "enabled": auth_enabled,
-            "cookie_secure": cookie_secure,
-            "cookie_samesite": "none" if cookie_secure else "lax",
-            "cross_site_cookie_ready": bool(auth_enabled and cookie_secure),
         },
         "restart_required": True,
     }
@@ -548,14 +486,15 @@ def _network_settings_payload() -> dict[str, Any]:
 
 @router.get("")
 async def get_settings():
-    user = get_current_user()
+    user = get_local_user()
     if not user.is_admin:
         # Non-admins never see the catalog (provider URLs/keys); their model
         # choices come from /settings/llm-options (grant-filtered).
         return {"ui": load_ui_settings()}
+    catalog_service = get_model_catalog_service()
     return {
         "ui": load_ui_settings(),
-        "catalog": get_model_catalog_service().load(),
+        "catalog": ModelCatalogService.public_catalog(catalog_service.load()),
         "providers": _provider_choices(),
     }
 
@@ -608,7 +547,8 @@ async def refresh_openai_codex_models() -> dict[str, Any]:
 @router.get("/catalog")
 async def get_catalog():
     _require_settings_admin()
-    return {"catalog": get_model_catalog_service().load()}
+    service = get_model_catalog_service()
+    return {"catalog": ModelCatalogService.public_catalog(service.load())}
 
 
 @router.get("/network")
@@ -627,9 +567,6 @@ async def update_network_settings(payload: NetworkSettingsUpdate):
             **current,
             "backend_port": payload.backend_port,
             "frontend_port": payload.frontend_port,
-            "next_public_api_base_external": payload.public_api_base.strip(),
-            "cors_origin": "",
-            "cors_origins": normalize_origins(payload.cors_origins),
         }
     )
     return _network_settings_payload()
@@ -1044,28 +981,32 @@ async def test_mineru_connection(payload: MinerUSettingsUpdate):
 
 @router.get("/llm-options")
 async def get_llm_options():
-    if not get_current_user().is_admin:
-        return allowed_llm_options()
     return list_llm_options(get_model_catalog_service().load())
 
 
 @router.put("/catalog")
 async def update_catalog(payload: CatalogPayload):
     _require_settings_admin()
-    catalog = get_model_catalog_service().save(payload.catalog)
+    service = get_model_catalog_service()
+    catalog = service.save(ModelCatalogService.merge_catalog_secrets(payload.catalog, service.load()))
     _invalidate_runtime_caches()
-    return {"catalog": catalog}
+    return {"catalog": ModelCatalogService.public_catalog(catalog)}
 
 
 @router.post("/apply")
 async def apply_catalog(payload: CatalogPayload | None = None):
     _require_settings_admin()
-    catalog = payload.catalog if payload is not None else get_model_catalog_service().load()
-    applied = get_model_catalog_service().apply(catalog)
+    service = get_model_catalog_service()
+    catalog = (
+        ModelCatalogService.merge_catalog_secrets(payload.catalog, service.load())
+        if payload is not None
+        else service.load()
+    )
+    applied = service.apply(catalog)
     _invalidate_runtime_caches()
     return {
         "message": "Catalog applied to runtime settings.",
-        "catalog": get_model_catalog_service().load(),
+        "catalog": ModelCatalogService.public_catalog(service.load()),
         "runtime": applied,
     }
 
@@ -1134,8 +1075,8 @@ async def update_voice_autoplay(update: VoiceAutoplayUpdate):
 async def update_chat_response_timeout(update: ChatResponseTimeoutUpdate):
     """Persist how long the chat UI waits for a turn event before timing out.
 
-    A personal UI preference (any authenticated user). Slow tools like image /
-    video generation can take longer than the old 60s default, so this is
+    A personal UI preference. Slow tools like image generation can take longer
+    than the old 60s default, so this is
     user-adjustable; the chat surface reads it client-side.
     """
     current_ui = load_ui_settings()
@@ -1240,7 +1181,13 @@ async def update_enabled_tools(update: EnabledToolsUpdate):
 @router.post("/tests/{service}/start")
 async def start_service_test(service: str, payload: CatalogPayload | None = None):
     _require_settings_admin()
-    run = get_config_test_runner().start(service, payload.catalog if payload else None)
+    catalog_service = get_model_catalog_service()
+    catalog = (
+        ModelCatalogService.merge_catalog_secrets(payload.catalog, catalog_service.load())
+        if payload
+        else None
+    )
+    run = get_config_test_runner().start(service, catalog)
     return {"run_id": run.id}
 
 
@@ -1301,8 +1248,13 @@ class TourCompletePayload(BaseModel):
 @router.post("/tour/complete")
 async def complete_tour(payload: TourCompletePayload | None = None):
     _require_settings_admin()
-    catalog = payload.catalog if payload and payload.catalog else get_model_catalog_service().load()
-    applied = get_model_catalog_service().apply(catalog)
+    service = get_model_catalog_service()
+    catalog = (
+        ModelCatalogService.merge_catalog_secrets(payload.catalog, service.load())
+        if payload and payload.catalog
+        else service.load()
+    )
+    applied = service.apply(catalog)
     _invalidate_runtime_caches()
     now = int(time.time())
     launch_at = now + 3

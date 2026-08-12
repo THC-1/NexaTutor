@@ -7,6 +7,7 @@ import re
 import sys
 
 import yaml
+import pytest
 
 
 def _load_module():
@@ -30,22 +31,17 @@ def test_render_docker_env_reads_json_only(tmp_path: Path) -> None:
         json.dumps({"backend_port": 9001, "frontend_port": 4000}),
         encoding="utf-8",
     )
-    (settings_dir / "integrations.json").write_text(
-        json.dumps({"pocketbase_port": 19090}),
-        encoding="utf-8",
-    )
     output_path = tmp_path / "docker.env"
 
     values = module.render_docker_env(settings_dir, output_path)
 
     assert values == {
-        "DEEPTUTOR_DOCKER_BACKEND_PORT": "9001",
-        "DEEPTUTOR_DOCKER_FRONTEND_PORT": "4000",
-        "DEEPTUTOR_DOCKER_POCKETBASE_PORT": "19090",
+        "NEXATUTOR_DOCKER_BACKEND_PORT": "9001",
+        "NEXATUTOR_DOCKER_FRONTEND_PORT": "4000",
     }
     saved = output_path.read_text(encoding="utf-8")
     assert "\nBACKEND_PORT=" not in saved
-    assert "DEEPTUTOR_DOCKER_BACKEND_PORT=9001" in saved
+    assert "NEXATUTOR_DOCKER_BACKEND_PORT=9001" in saved
 
 
 def test_render_docker_env_uses_defaults_for_missing_or_invalid_json(tmp_path: Path) -> None:
@@ -60,9 +56,40 @@ def test_render_docker_env_uses_defaults_for_missing_or_invalid_json(tmp_path: P
 
     values = module.render_docker_env(settings_dir, output_path)
 
-    assert values["DEEPTUTOR_DOCKER_BACKEND_PORT"] == "8001"
-    assert values["DEEPTUTOR_DOCKER_FRONTEND_PORT"] == "3782"
-    assert values["DEEPTUTOR_DOCKER_POCKETBASE_PORT"] == "8090"
+    assert values["NEXATUTOR_DOCKER_BACKEND_PORT"] == "8001"
+    assert values["NEXATUTOR_DOCKER_FRONTEND_PORT"] == "3782"
+
+
+def test_compose_wrapper_drops_legacy_auth_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_module()
+    captured: dict[str, str] = {}
+    for key in module.LEGACY_AUTH_ENV_KEYS:
+        monkeypatch.setenv(key, "legacy-value")
+    monkeypatch.setattr(module, "DOCKER_ENV_PATH", tmp_path / "docker.env")
+    monkeypatch.setattr(
+        module,
+        "render_docker_env",
+        lambda: {
+            "NEXATUTOR_DOCKER_BACKEND_PORT": "8001",
+            "NEXATUTOR_DOCKER_FRONTEND_PORT": "3782",
+        },
+    )
+    monkeypatch.setattr(module.shutil, "which", lambda _name: "docker")
+
+    class _Result:
+        returncode = 0
+
+    def _run(_command, *, cwd, env, check):
+        del cwd, check
+        captured.update(env)
+        return _Result()
+
+    monkeypatch.setattr(module.subprocess, "run", _run)
+
+    assert module.main(["config"]) == 0
+    assert not set(module.LEGACY_AUTH_ENV_KEYS).intersection(captured)
 
 
 def test_compose_files_do_not_consume_legacy_env_names() -> None:
@@ -73,12 +100,13 @@ def test_compose_files_do_not_consume_legacy_env_names() -> None:
         assert "${FRONTEND_PORT" not in content
         assert "\n      - BACKEND_PORT" not in content
         assert "\n      - AUTH_ENABLED" not in content
-        assert "DEEPTUTOR_DOCKER_BACKEND_PORT" in content
+        assert "NEXATUTOR_DOCKER_BACKEND_PORT" in content
+        assert "DEEPTUTOR_DOCKER_BACKEND_PORT" not in content
 
 
 def _compose_service(root: Path, name: str) -> dict:
     content = yaml.safe_load((root / name).read_text(encoding="utf-8"))
-    return content["services"]["deeptutor"]
+    return content["services"]["nexatutor"]
 
 
 def _volume_targets(root: Path, name: str) -> set[str | None]:
@@ -103,8 +131,8 @@ def test_codex_oauth_overlay_forwards_loopback_callbacks_to_frontend() -> None:
     ports = _compose_service(root, "compose.codex-oauth.yaml")["ports"]
 
     assert set(ports) == {
-        "127.0.0.1:1455:${DEEPTUTOR_DOCKER_FRONTEND_PORT:-3782}",
-        "127.0.0.1:1457:${DEEPTUTOR_DOCKER_FRONTEND_PORT:-3782}",
+        "127.0.0.1:1455:${NEXATUTOR_DOCKER_FRONTEND_PORT:-3782}",
+        "127.0.0.1:1457:${NEXATUTOR_DOCKER_FRONTEND_PORT:-3782}",
     }
 
 
@@ -139,19 +167,19 @@ def test_container_docs_use_temporary_codex_oauth_bridge() -> None:
     assert "127.0.0.1:1457:3782" in section
     for base_file in ("docker-compose.yml", "docker-compose.ghcr.yml"):
         assert (
-            f"-f {base_file} -f compose.codex-oauth.yaml up -d --force-recreate deeptutor"
+            f"-f {base_file} -f compose.codex-oauth.yaml up -d --force-recreate nexatutor"
         ) in normalized_section
     assert (
         "podman compose -f compose.yaml -f compose.codex-oauth.yaml "
-        "up -d --force-recreate deeptutor"
+        "up -d --force-recreate nexatutor"
     ) in normalized_section
 
 
 def test_dockerfile_is_json_driven_without_bundle_sed() -> None:
     """The image no longer rewrites the built bundle at startup (the runtime
-    ``sed -i`` broke under a read-only rootfs). URL/auth knowledge is JSON-driven:
+    ``sed -i`` broke under a read-only rootfs). URL knowledge is JSON-driven:
     the entrypoint re-exports runtime settings from data/user/settings/*.json
-    (including DEEPTUTOR_API_BASE_URL / DEEPTUTOR_AUTH_ENABLED) and web/proxy.ts
+    (including NEXATUTOR_API_BASE_URL) and web/proxy.ts
     forwards /api/* and /ws/* to the backend at request time."""
     root = Path(__file__).resolve().parents[2]
     content = (root / "Dockerfile").read_text(encoding="utf-8")
@@ -160,9 +188,23 @@ def test_dockerfile_is_json_driven_without_bundle_sed() -> None:
     assert "__NEXT_PUBLIC_AUTH_ENABLED_PLACEHOLDER__" not in content
     # Still JSON-driven: stale runtime env names are ignored and re-exported
     # from the settings JSON on every start.
-    assert "DEEPTUTOR_IGNORE_PROCESS_ENV_OVERRIDES=1" in content
+    assert "NEXATUTOR_IGNORE_PROCESS_ENV_OVERRIDES=1" in content
     assert 'unset "$key"' in content
     assert "export_runtime_settings_to_env" in content
+    assert "data/user/settings/auth.json" not in content
+    assert "Auth enabled:" not in content
+    assert "export DEEPTUTOR_AUTH_ENABLED" not in content
+    # Stale deployment variables are explicitly discarded, never exported.
+    for removed in (
+        "AUTH_ENABLED",
+        "NEXT_PUBLIC_AUTH_ENABLED",
+        "AUTH_USERNAME",
+        "AUTH_PASSWORD_HASH",
+        "AUTH_TOKEN_EXPIRE_HOURS",
+        "AUTH_COOKIE_SECURE",
+        "DEEPTUTOR_AUTH_ENABLED",
+    ):
+        assert f"    {removed} \\" in content
 
 
 def test_supervisord_runs_as_root_with_unprivileged_children() -> None:

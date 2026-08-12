@@ -13,7 +13,7 @@ extra and must never sink a turn.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 import json
 import logging
@@ -38,7 +38,6 @@ _BLOCK_SEGMENTS: dict[str, str] = {
     "runtime_policy": "system_prompt",
     "loop": "system_prompt",
     "persona_style": "persona_style",
-    "partner_turn_policy": "partner_turn_policy",
     "memory": "memory",
     "tools": "tool_manifest",
     "knowledge_base_note": "knowledge_base_note",
@@ -139,8 +138,6 @@ def build_context_budget(
     model: str = "",
     context_window: Any = None,
     max_tokens: Any = None,
-    loaded_deferred_names: Iterable[str] = (),
-    deferred_tool_count: int = 0,
     counter: TokenCounter | None = None,
 ) -> dict[str, Any] | None:
     """Break the turn's last real request down into context-window segments.
@@ -155,8 +152,6 @@ def build_context_budget(
             model=model,
             context_window=context_window,
             max_tokens=max_tokens,
-            loaded_deferred_names=loaded_deferred_names,
-            deferred_tool_count=deferred_tool_count,
             counter=counter or _default_counter(),
         )
     except Exception:
@@ -171,15 +166,13 @@ def _build(
     model: str,
     context_window: Any,
     max_tokens: Any,
-    loaded_deferred_names: Iterable[str],
-    deferred_tool_count: int,
     counter: TokenCounter,
 ) -> dict[str, Any]:
     block_totals = _prompt_block_tokens(blocks, counter)
     totals: dict[str, int] = {}
     _merge(totals, block_totals)
     _merge(totals, {"system_prompt": _render_overhead(request.messages, block_totals, counter)})
-    _merge(totals, _tool_schema_tokens(request.tool_schemas, set(loaded_deferred_names), counter))
+    _merge(totals, _tool_schema_tokens(request.tool_schemas, counter))
     _merge(totals, {"messages": count_conversation_tokens(request.messages, counter)})
 
     # Rank once, then derive both the emitted segments and the total from it,
@@ -207,7 +200,6 @@ def _build(
         # inject a deterministic stand-in, and production always takes the
         # default, so the probe and the counter in use are the same thing there.
         "counter": detect_counter_name(),
-        "deferred_tool_count": max(0, int(deferred_tool_count)),
         "segments": segments,
     }
 
@@ -254,16 +246,14 @@ def _render_overhead(
 
 def _tool_schema_tokens(
     schemas: Sequence[dict[str, Any]],
-    loaded_deferred_names: set[str],
     counter: TokenCounter,
 ) -> dict[str, int]:
-    """Split the sent schemas by origin: built-in registry vs deferred loader."""
-    totals = {"system_tools": 0, "mcp_tools": 0}
+    """Count schemas sent from the built-in registry."""
+    totals = {"system_tools": 0}
     for schema in schemas:
         if not isinstance(schema, dict):
             continue
-        key = "mcp_tools" if _schema_name(schema) in loaded_deferred_names else "system_tools"
-        totals[key] += counter(_dumps(schema))
+        totals["system_tools"] += counter(_dumps(schema))
     return totals
 
 
@@ -284,13 +274,6 @@ def _message_tokens(message: dict[str, Any], counter: TokenCounter) -> int:
         # so their arguments occupy the window just like message text.
         total += counter(_dumps(tool_calls))
     return total
-
-
-def _schema_name(schema: dict[str, Any]) -> str:
-    function = schema.get("function")
-    if isinstance(function, dict):
-        return str(function.get("name") or "")
-    return str(schema.get("name") or "")
 
 
 def _merge(totals: dict[str, int], more: dict[str, int]) -> None:

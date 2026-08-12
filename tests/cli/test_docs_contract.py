@@ -81,8 +81,6 @@ def test_documented_deeptutor_subcommands_exist() -> None:
         "kb",
         "memory",
         "notebook",
-        "partner",
-        "plugin",
         "provider",
         "run",
         "serve",

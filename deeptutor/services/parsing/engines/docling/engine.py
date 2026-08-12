@@ -3,7 +3,7 @@
 Docling's structured conversion is exported to Markdown for the canonical IR.
 Structured ``content_list`` mapping is intentionally deferred — markdown is a
 valid IR (consumers fall back to it), and a faithful block mapping depends on
-the Docling document API, which is best pinned when we wire LightRAG.
+the Docling document API, which is best handled as a separate parser contract.
 """
 
 from __future__ import annotations

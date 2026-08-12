@@ -10,8 +10,6 @@ const SURFACES = [
   "notebook",
   "quiz",
   "kb",
-  "book",
-  "partner",
   "cowriter",
 ];
 

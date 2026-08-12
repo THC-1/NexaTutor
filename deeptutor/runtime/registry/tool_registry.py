@@ -38,14 +38,6 @@ class ToolRegistry:
         self._tools[name] = tool
         logger.debug("Registered tool: %s", name)
 
-    def unregister(self, name: str) -> None:
-        """Remove a tool (no-op when absent). Used by MCP reloads."""
-        self._tools.pop(name, None)
-
-    def deferred_tools(self) -> list[BaseTool]:
-        """Tools flagged for progressive disclosure (see ``BaseTool.deferred``)."""
-        return [t for t in self._tools.values() if getattr(t, "deferred", False)]
-
     def load_builtins(self) -> None:
         """Instantiate and register all built-in tools."""
         for tool_type in BUILTIN_TOOL_TYPES:

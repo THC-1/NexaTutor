@@ -141,14 +141,6 @@ async def test_turn_runtime_replays_events_and_materializes_messages(
     )
     monkeypatch.setattr("deeptutor.runtime.orchestrator.ChatOrchestrator", FakeOrchestrator)
     monkeypatch.setattr(
-        "deeptutor.book.context.build_book_context",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            text="## Page: Signal Basics\nA selected page.",
-            references=[{"book_id": "book-1", "page_ids": ["page-1"]}],
-            warnings=[],
-        ),
-    )
-    monkeypatch.setattr(
         "deeptutor.services.memory.get_memory_store",
         lambda: SimpleNamespace(
             read_l3_concat=lambda: "",
@@ -176,7 +168,6 @@ async def test_turn_runtime_replays_events_and_materializes_messages(
             "language": "en",
             "persona": "socratic",
             "memory_references": ["summary"],
-            "book_references": [{"book_id": "book-1", "page_ids": ["page-1"]}],
             "config": {},
         }
     )
@@ -207,26 +198,11 @@ async def test_turn_runtime_replays_events_and_materializes_messages(
     assert done_event["metadata"]["assistant_message_id"] == assistant_row["id"]
     assert detail["messages"][0]["metadata"]["request_snapshot"]["persona"] == "socratic"
     assert detail["messages"][0]["metadata"]["request_snapshot"]["memoryReferences"] == ["summary"]
-    assert detail["messages"][0]["metadata"]["request_snapshot"]["bookReferences"] == [
-        {"book_id": "book-1", "page_ids": ["page-1"]}
-    ]
-    # Chat capability now routes attached sources through the manifest +
-    # ``read_source`` tool instead of inlining ``[Book Context]`` into the
-    # user message. The raw user message stays raw; the book payload
-    # surfaces in ``context.source_manifest`` and ``metadata.source_index``.
     assert str(captured["user_message"]) == "hello, i'm frank"
     manifest = str(captured.get("source_manifest") or "")
-    assert "[Attached Sources]" in manifest
-    # Book source id is now per-book (``bk-{book_id}``) so multi-book
-    # sessions can read_source each independently. The mocked book has id
-    # "book-1".
-    assert "bk-book-1" in manifest
+    assert manifest == ""
     source_index = (captured.get("metadata") or {}).get("source_index") or {}
-    assert "bk-book-1" in source_index
-    assert "A selected page." in source_index["bk-book-1"]
-    assert captured["metadata"] and captured["metadata"]["book_references"] == [
-        {"book_id": "book-1", "page_ids": ["page-1"]}
-    ]
+    assert not any(key.startswith("bk-") for key in source_index)
     assert detail["messages"][1]["content"] == "Hello Frank"
     assert detail["preferences"] == {
         "capability": "chat",

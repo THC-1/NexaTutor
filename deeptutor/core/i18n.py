@@ -16,11 +16,6 @@ _MESSAGES: dict[str, dict[str, str]] = {
     "en": {
         "api.content_required": "content is required",
         "api.invalid_channels_config": "Invalid channels config",
-        "api.partner_already_exists": "Partner '{name}' already exists",
-        "api.partner_not_found": "Partner not found",
-        "api.partner_not_found_or_not_running": "Partner not found or not running",
-        "api.partner_not_running": "Partner not running",
-        "api.partner_stopped_start_required": "Partner is stopped. Start it before chatting.",
         "api.persona_already_exists": "Persona already exists: {name}",
         "api.persona_name_required": "Persona name is required",
         "api.persona_not_found": "Persona not found: {name}",
@@ -69,11 +64,6 @@ _MESSAGES: dict[str, dict[str, str]] = {
     "zh": {
         "api.content_required": "content 不能为空",
         "api.invalid_channels_config": "渠道配置无效",
-        "api.partner_already_exists": "伙伴 '{name}' 已存在",
-        "api.partner_not_found": "未找到伙伴",
-        "api.partner_not_found_or_not_running": "未找到伙伴或伙伴未运行",
-        "api.partner_not_running": "伙伴未运行",
-        "api.partner_stopped_start_required": "伙伴已停止。请先启动后再聊天。",
         "api.persona_already_exists": "Persona 已存在：{name}",
         "api.persona_name_required": "Persona 名称不能为空",
         "api.persona_not_found": "未找到 Persona：{name}",

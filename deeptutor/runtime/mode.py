@@ -9,6 +9,8 @@ Modules can check the mode to conditionally import server-only dependencies.
 from enum import Enum
 import os
 
+from deeptutor.runtime.env import get_prefixed_env, set_prefixed_env
+
 
 class RunMode(str, Enum):
     CLI = "cli"
@@ -19,7 +21,7 @@ _current_mode: RunMode | None = None
 
 
 def _resolve_mode() -> RunMode:
-    raw = os.environ.get("DEEPTUTOR_MODE", "").strip().lower()
+    raw = get_prefixed_env("MODE").strip().lower()
     if raw == RunMode.SERVER.value:
         return RunMode.SERVER
     return RunMode.CLI
@@ -36,7 +38,7 @@ def set_mode(mode: RunMode) -> None:
     """Explicitly set the run mode (call early in entry points)."""
     global _current_mode
     _current_mode = mode
-    os.environ["DEEPTUTOR_MODE"] = mode.value
+    set_prefixed_env("MODE", mode.value)
 
 
 def is_cli() -> bool:

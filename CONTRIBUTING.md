@@ -57,7 +57,7 @@ npm ci --legacy-peer-deps
 cd ..
 ```
 
-不要使用 `.[all]` 作为默认开发安装；它会拉入正在计划移除的 Partners、Matrix、Manim 等大型或平台相关依赖。
+不要使用 `.[all]` 作为默认开发安装；按需选择项目提供的 optional extra。
 
 ## 基本验证
 
@@ -85,7 +85,7 @@ npm run build
 
 - 禁止执行 `git add -A`。
 - 禁止把 `data/`、API Key、Token、上传资料、知识库索引或日志提交到仓库。
-- `web/.next-deeptutor/` 有大量历史被跟踪构建产物；检查和暂存时必须显式排除。
+- `web/.next-deeptutor/` 已停止 Git 跟踪并被忽略；检查和暂存时仍需防止重新引入。
 - 前端本地验证使用被忽略的 `web/.next`。
 - 不恢复、覆盖或删除无法确认归属的已有修改。
 - 不自动删除旧 Partner、Book、Agent、OAuth 或 RAG 数据。

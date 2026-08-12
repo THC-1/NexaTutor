@@ -1,19 +1,13 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { Code2, Copy, Check, ExternalLink, Maximize2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Mermaid } from "@/components/Mermaid";
 import { prepareIframeHtml } from "@/lib/iframe-html";
-import { isManimResult, type VisualizeResult } from "@/lib/visualize-types";
+import type { VisualizeResult } from "@/lib/visualize-types";
 import "./svg-theme.css";
-
-const MathAnimatorViewer = dynamic(
-  () => import("@/components/math-animator/MathAnimatorViewer"),
-  { ssr: false },
-);
 
 function stripCodeFence(source: string): string {
   const trimmed = source.trim();
@@ -385,10 +379,7 @@ export default function VisualizationViewer({
 }) {
   const { t } = useTranslation();
 
-  // All hooks must run unconditionally before any early return — React
-  // requires a stable hook order across renders. The text-path body below
-  // is the only consumer of these states; the manim path returns earlier
-  // and ignores them.
+  // Hooks run unconditionally to keep a stable order across renders.
   const [showCode, setShowCode] = useState(false);
   const [copied, setCopied] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -407,11 +398,6 @@ export default function VisualizationViewer({
     };
   }, [fullscreen]);
 
-  if (isManimResult(result)) {
-    return <MathAnimatorViewer result={result.manim} />;
-  }
-
-  // TypeScript narrows ``result`` to the text-only variant from here on.
   // HTML iframe already provides its own "Open in new tab" affordance; the
   // sandboxed iframe also doesn't behave well inside a re-rendered modal.
   const supportsFullscreen = result.render_type !== "html";

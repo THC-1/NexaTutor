@@ -16,17 +16,14 @@ import {
   BrainCircuit,
   Clapperboard,
   Code2,
-  Compass,
   Database,
   FileSearch,
   Globe,
   GraduationCap,
   Image as ImageIcon,
-  Lightbulb,
   MessageSquare,
   Microscope,
   PenLine,
-  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -51,10 +48,6 @@ import {
   QuizFollowupProvider,
   useQuizFollowupController,
 } from "@/context/QuizFollowupContext";
-import {
-  GeogebraTabProvider,
-  useGeogebraTabOpener,
-} from "@/context/GeogebraTabContext";
 import { BookmarkPlus, Download, PanelRight } from "lucide-react";
 import {
   useUnifiedChat,
@@ -105,10 +98,6 @@ import { downloadChatMarkdown } from "@/lib/chat-export";
 import { buildChatOutline } from "@/lib/chat-outline";
 import { isPlaceholderSessionTitle } from "@/lib/session-title";
 import type { SpaceMemoryFile } from "@/lib/space-items";
-import {
-  selectedBooksToPayload,
-  type SelectedBookReference,
-} from "@/lib/book-references";
 
 const NotebookRecordPicker = dynamic(
   () => import("@/components/notebook/NotebookRecordPicker"),
@@ -137,12 +126,6 @@ const QuestionBankPicker = dynamic(
 const MemoryPicker = dynamic(() => import("@/components/chat/MemoryPicker"), {
   ssr: false,
 });
-const BookReferencePicker = dynamic(
-  () => import("@/components/chat/BookReferencePicker"),
-  {
-    ssr: false,
-  },
-);
 const SaveToNotebookModal = dynamic(
   () => import("@/components/notebook/SaveToNotebookModal"),
   {
@@ -174,14 +157,10 @@ const ResearchConfigPanel = dynamic(
 /* ------------------------------------------------------------------ */
 
 type ToolName =
-  | "brainstorm"
-  | "geogebra_analysis"
   | "web_search"
   | "code_execution"
-  | "reason"
   | "paper_search"
-  | "imagegen"
-  | "videogen";
+  | "imagegen";
 
 interface ToolDef {
   name: ToolName;
@@ -190,14 +169,10 @@ interface ToolDef {
 }
 
 const ALL_TOOLS: ToolDef[] = [
-  { name: "brainstorm", label: "Brainstorm", icon: Lightbulb },
-  { name: "geogebra_analysis", label: "GeoGebra", icon: Compass },
   { name: "web_search", label: "Web Search", icon: Globe },
   { name: "code_execution", label: "Code", icon: Code2 },
-  { name: "reason", label: "Reason", icon: Sparkles },
   { name: "paper_search", label: "Arxiv Search", icon: FileSearch },
   { name: "imagegen", label: "Image Gen", icon: ImageIcon },
-  { name: "videogen", label: "Video Gen", icon: Clapperboard },
 ];
 
 interface CapabilityDef {
@@ -221,14 +196,10 @@ const CAPABILITIES: CapabilityDef[] = [
     description: "Flexible conversation with any tool",
     icon: MessageSquare,
     allowedTools: [
-      "brainstorm",
-      "geogebra_analysis",
       "web_search",
       "code_execution",
-      "reason",
       "paper_search",
       "imagegen",
-      "videogen",
     ],
     defaultTools: [],
   },
@@ -237,8 +208,8 @@ const CAPABILITIES: CapabilityDef[] = [
     label: "Solve",
     description: "Multi-step reasoning & problem solving",
     icon: BrainCircuit,
-    allowedTools: ["web_search", "code_execution", "reason"],
-    defaultTools: ["web_search", "code_execution", "reason"],
+    allowedTools: ["web_search", "code_execution"],
+    defaultTools: ["web_search"],
     loopEngine: true,
   },
   {
@@ -247,7 +218,7 @@ const CAPABILITIES: CapabilityDef[] = [
     description: "Auto-validated question generation",
     icon: PenLine,
     allowedTools: ["web_search", "code_execution"],
-    defaultTools: ["web_search", "code_execution"],
+    defaultTools: ["web_search"],
   },
   {
     value: "deep_research",
@@ -255,7 +226,7 @@ const CAPABILITIES: CapabilityDef[] = [
     description: "Comprehensive multi-agent research",
     icon: Microscope,
     allowedTools: ["web_search", "paper_search", "code_execution"],
-    defaultTools: ["web_search", "paper_search", "code_execution"],
+    defaultTools: ["web_search", "paper_search"],
   },
   {
     value: "visualize",
@@ -286,7 +257,7 @@ interface KnowledgeBase {
   metadata?: {
     /** Connected-source kind, e.g. "obsidian" | "subagent". */
     type?: string;
-    /** Backend of a connected subagent: "claude_code" | "codex" | "partner". */
+    /** Backend of a connected local subagent CLI. */
     agent_kind?: string;
   };
 }
@@ -368,9 +339,8 @@ export default function ChatPage() {
   } = useUnifiedChat();
 
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
-  // A connected agent to preselect once it loads, from `?agent=<name>` on the
-  // URL (the partner list page links here to drop straight into a chat with a
-  // partner). Captured once at first client render — the URL is rewritten to
+  // A connected local agent to preselect once it loads, from `?agent=<name>`.
+  // Captured once at first client render — the URL is rewritten to
   // `/home/<sessionId>` as soon as the new session is created, dropping the
   // query — so we can't read it later from the live search params.
   const pendingAgentRef = useRef<string | null | undefined>(undefined);
@@ -528,7 +498,6 @@ export default function ChatPage() {
   ]);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showNotebookPicker, setShowNotebookPicker] = useState(false);
-  const [showBookPicker, setShowBookPicker] = useState(false);
   const [showHistoryPicker, setShowHistoryPicker] = useState(false);
   const [showAgentsPicker, setShowAgentsPicker] = useState(false);
   const [showQuestionBankPicker, setShowQuestionBankPicker] = useState(false);
@@ -540,9 +509,6 @@ export default function ChatPage() {
   const [spaceMenuOpen, setSpaceMenuOpen] = useState(false);
   const [selectedNotebookRecords, setSelectedNotebookRecords] = useState<
     SelectedRecord[]
-  >([]);
-  const [selectedBookReferences, setSelectedBookReferences] = useState<
-    SelectedBookReference[]
   >([]);
   const [selectedHistorySessions, setSelectedHistorySessions] = useState<
     SelectedHistorySession[]
@@ -816,10 +782,6 @@ export default function ChatPage() {
       record_ids,
     }));
   }, [selectedNotebookRecords]);
-  const bookReferencesPayload = useMemo(
-    () => selectedBooksToPayload(selectedBookReferences),
-    [selectedBookReferences],
-  );
   // Chat-history and imported-agent references are both just session ids and
   // share one backend field. Merge + de-dupe them here.
   const historyReferencesPayload = useMemo(
@@ -1552,7 +1514,6 @@ export default function ChatPage() {
       if (
         (!content &&
           !attachments.length &&
-          !selectedBookReferences.length &&
           !selectedNotebookRecords.length &&
           !selectedHistorySessions.length &&
           !selectedQuestionEntries.length &&
@@ -1601,7 +1562,6 @@ export default function ChatPage() {
       const messageContent =
         content ||
         (selectedNotebookRecords.length ||
-        selectedBookReferences.length ||
         selectedHistorySessions.length ||
         selectedAgentSessions.length ||
         selectedQuestionEntries.length ||
@@ -1620,14 +1580,13 @@ export default function ChatPage() {
         config,
         notebookReferencesPayload,
         historyReferencesPayload,
-        { bookReferences: bookReferencesPayload },
+        {},
         questionNotebookReferencesPayload,
         undefined,
         memoryPayload,
       );
       shouldAutoScrollRef.current = true;
       setAttachments([]);
-      setSelectedBookReferences([]);
       setSelectedNotebookRecords([]);
       setSelectedHistorySessions([]);
       setSelectedAgentSessions([]);
@@ -1636,7 +1595,6 @@ export default function ChatPage() {
     },
     [
       attachments,
-      bookReferencesPayload,
       historyReferencesPayload,
       isQuizMode,
       isResearchMode,
@@ -1652,7 +1610,6 @@ export default function ChatPage() {
       selectedHistorySessions.length,
       selectedAgentSessions.length,
       selectedMemoryFiles.length,
-      selectedBookReferences.length,
       selectedNotebookRecords.length,
       selectedQuestionEntries.length,
       sendMessage,
@@ -1697,7 +1654,6 @@ export default function ChatPage() {
           displayUserMessage: false,
           persistUserMessage: false,
           requestSnapshotOverride,
-          bookReferences: originalSnapshot?.bookReferences,
         },
         originalSnapshot?.questionNotebookReferences,
         originalSnapshot?.persona,
@@ -1751,8 +1707,7 @@ export default function ChatPage() {
     },
     [setKBs, state.knowledgeBases, agentNameSet],
   );
-  // Honor `?agent=<name>` once its connection KB has loaded: preselect it so a
-  // partner opened from the partner list starts the chat already targeting it.
+  // Honor `?agent=<name>` once its local-agent connection KB has loaded.
   useEffect(() => {
     if (agentPreselectDoneRef.current) return;
     const name = pendingAgentRef.current;
@@ -1762,9 +1717,6 @@ export default function ChatPage() {
   }, [agentNameSet, handleSelectAgent]);
   const handleSelectNotebookPicker = useCallback(() => {
     setShowNotebookPicker(true);
-  }, []);
-  const handleSelectBookPicker = useCallback(() => {
-    setShowBookPicker(true);
   }, []);
   const handleSelectHistoryPicker = useCallback(() => {
     setShowHistoryPicker(true);
@@ -1797,11 +1749,6 @@ export default function ChatPage() {
       prev.filter((record) => record.notebookId !== notebookId),
     );
   }, []);
-  const handleRemoveBookReference = useCallback((bookId: string) => {
-    setSelectedBookReferences((prev) =>
-      prev.filter((record) => record.bookId !== bookId),
-    );
-  }, []);
   const handleRemoveQuestion = useCallback((entryId: number) => {
     setSelectedQuestionEntries((prev) =>
       prev.filter((entry) => entry.id !== entryId),
@@ -1822,15 +1769,6 @@ export default function ChatPage() {
   const handleCloseNotebookPicker = useCallback(() => {
     setShowNotebookPicker(false);
   }, []);
-  const handleCloseBookPicker = useCallback(() => {
-    setShowBookPicker(false);
-  }, []);
-  const handleApplyBookReferences = useCallback(
-    (references: SelectedBookReference[]) => {
-      setSelectedBookReferences(references);
-    },
-    [],
-  );
   const handleApplyNotebookRecords = useCallback(
     (records: SelectedRecord[]) => {
       setSelectedNotebookRecords(records);
@@ -1886,9 +1824,7 @@ export default function ChatPage() {
 
   return (
     <QuizFollowupProvider>
-      <GeogebraTabProvider>
         <QuizFollowupBridge viewerPanelRef={viewerPanelRef} />
-        <GeogebraTabBridge viewerPanelRef={viewerPanelRef} />
         <SubagentTabWatcher
           messages={state.messages}
           viewerPanelRef={viewerPanelRef}
@@ -2092,7 +2028,6 @@ export default function ChatPage() {
               llmOptionsLoading={llmOptionsLoading}
               llmOptionsError={llmOptionsError}
               contextBudget={contextBudget}
-              selectedBookReferences={selectedBookReferences}
               selectedNotebookRecords={selectedNotebookRecords}
               selectedHistorySessions={selectedHistorySessions}
               selectedAgentSessions={selectedAgentSessions}
@@ -2112,7 +2047,6 @@ export default function ChatPage() {
               onToggleKB={handleToggleKB}
               onSelectLLM={setLLMSelection}
               onSelectNotebookPicker={handleSelectNotebookPicker}
-              onSelectBookPicker={handleSelectBookPicker}
               onSelectHistoryPicker={handleSelectHistoryPicker}
               onSelectAgentsPicker={handleSelectAgentsPicker}
               onSelectQuestionBankPicker={handleSelectQuestionBankPicker}
@@ -2129,7 +2063,6 @@ export default function ChatPage() {
               onPreviewAttachment={handlePreviewPendingAttachment}
               onRemoveHistory={handleRemoveHistory}
               onRemoveAgent={handleRemoveAgent}
-              onRemoveBookReference={handleRemoveBookReference}
               onRemoveNotebook={handleRemoveNotebook}
               onRemoveQuestion={handleRemoveQuestion}
               onDragEnter={handleDragEnter}
@@ -2155,12 +2088,6 @@ export default function ChatPage() {
             open={showNotebookPicker}
             onClose={handleCloseNotebookPicker}
             onApply={handleApplyNotebookRecords}
-          />
-          <BookReferencePicker
-            open={showBookPicker}
-            initialReferences={selectedBookReferences}
-            onClose={handleCloseBookPicker}
-            onApply={handleApplyBookReferences}
           />
           <HistorySessionPicker
             open={showHistoryPicker}
@@ -2204,7 +2131,6 @@ export default function ChatPage() {
             onAutoOpen={() => setViewerOpen(true)}
           />
         </div>
-      </GeogebraTabProvider>
     </QuizFollowupProvider>
   );
 }
@@ -2226,27 +2152,6 @@ function QuizFollowupBridge({
       viewerPanelRef.current?.openQuizFollowupTab(ctx);
     });
     return () => controller.setOpenTabHandler(null);
-  }, [controller, viewerPanelRef]);
-  return null;
-}
-
-/**
- * Same shape as QuizFollowupBridge, for the GeoGebra-tab opener exposed
- * to in-message CTAs (the ``ggbscript`` markdown fence becomes a card
- * that calls ``controller.openTab(...)`` here).
- */
-function GeogebraTabBridge({
-  viewerPanelRef,
-}: {
-  viewerPanelRef: React.MutableRefObject<SessionViewerPanelHandle | null>;
-}) {
-  const controller = useGeogebraTabOpener();
-  useEffect(() => {
-    if (!controller) return;
-    controller.setOpenHandler((payload) => {
-      viewerPanelRef.current?.openGeogebraTab(payload);
-    });
-    return () => controller.setOpenHandler(null);
   }, [controller, viewerPanelRef]);
   return null;
 }

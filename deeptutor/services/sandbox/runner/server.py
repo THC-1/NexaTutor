@@ -15,7 +15,7 @@ Design constraints:
 
 Wire contract (must match ``RunnerSidecarBackend``):
 
-  ``GET  /health`` -> 200, any body, means alive.
+  ``GET  /health`` -> JSON capability handshake; callers require ``argv-v1``.
   ``POST /exec``   -> request/response JSON described by the dataclasses in
                       :mod:`deeptutor.services.sandbox.spec`. Request::
 
@@ -50,8 +50,8 @@ Argv note:
 Mounts note:
   This server does **not** perform any mounting. The runner container shares
   the task-workspace subtrees with the main app at the *same* paths
-  (``/app/data/user/workspace`` for the admin scope, ``/app/data/users`` for
-  per-user scopes — via docker-compose). So when ``host_path == sandbox_path``
+  (``/app/data/user/workspace`` — via docker-compose). So when
+  ``host_path == sandbox_path``
   the directory is already visible here and no action is needed. We only
   read/record the ``mounts`` field; what is visible is decided by the compose
   volume layout, and ``workdir`` is validated against the same roots
@@ -155,8 +155,8 @@ def _build_preexec_fn(memory_mb: int, cpu_seconds: int):
 _ALLOWED_WORKDIR_ROOTS = [
     root
     for root in os.environ.get(
-        "DEEPTUTOR_RUNNER_ALLOWED_WORKDIRS",
-        "/app/data/user/workspace:/app/data/users",
+        "NEXATUTOR_RUNNER_ALLOWED_WORKDIRS",
+        os.environ.get("DEEPTUTOR_RUNNER_ALLOWED_WORKDIRS", "/app/data/user/workspace"),
     ).split(":")
     if root
 ]
@@ -191,6 +191,8 @@ def execute(payload: dict[str, Any]) -> dict[str, Any]:
     if any(not isinstance(item, str) for item in raw_argv):
         return _error_result("'argv' must be a list of strings")
     argv: list[str] = list(raw_argv)
+    if not argv:
+        return _error_result("shell command requests are disabled; argv is required")
 
     workdir = payload.get("workdir") or None
     if workdir is not None and not isinstance(workdir, str):
@@ -228,11 +230,9 @@ def execute(payload: dict[str, Any]) -> dict[str, Any]:
     preexec_fn = _build_preexec_fn(memory_mb, cpu_seconds)
 
     try:
-        completed = subprocess.run(  # noqa: S602 - shell=True is the contract
-            argv or command,
-            # An argv request is exec'd directly; only the shell-string form gets
-            # a shell. See the "Argv note" in the module docstring.
-            shell=not argv,  # nosec B602 — the runner exists to execute shell commands in-sandbox
+        completed = subprocess.run(
+            argv,
+            shell=False,
             cwd=workdir,
             env=env,
             timeout=timeout_s,
@@ -311,12 +311,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - http.server naming
         if self.path.rstrip("/") == "/health" or self.path == "/":
-            body = b"ok"
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self._send_json(200, {"status": "ok", "capabilities": ["argv-v1"]})
             return
         self._send_json(404, _error_result("not found"))
 

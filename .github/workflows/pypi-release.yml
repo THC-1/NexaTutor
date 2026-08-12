@@ -1,8 +1,10 @@
-name: PyPI Release
+name: PyPI Release (paused)
 
-# Triggered when a GitHub Release is published.
+# Paused while NexaTutor still carries the upstream DeepTutor distribution
+# identity. The manual entry remains visible for auditability, but the publish
+# job is hard-disabled until a dedicated NexaTutor release workflow replaces it.
 # Publishes the full app package with the version derived from the release tag:
-#   - deeptutor (Python backend/CLI + packaged Next.js standalone assets)
+#   - nexatutor (Python backend/CLI + packaged Next.js standalone assets)
 #
 # The CLI-only package is intentionally not published to PyPI; install it from
 # a local checkout with `python -m pip install -e ./packaging/deeptutor-cli`.
@@ -14,8 +16,7 @@ name: PyPI Release
 # project to trust this workflow file, then no API token secret is needed.
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,10 +29,11 @@ concurrency:
 jobs:
   build-and-publish:
     name: Build and Publish PyPI Package
+    if: ${{ false }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/deeptutor/
+      url: https://pypi.org/project/nexatutor/
 
     steps:
       - name: Checkout release tag
@@ -113,42 +115,41 @@ jobs:
         run: python scripts/prepare_web_package.py
         env:
           NEXT_PUBLIC_API_BASE: __NEXT_PUBLIC_API_BASE_PLACEHOLDER__
-          NEXT_PUBLIC_AUTH_ENABLED: __NEXT_PUBLIC_AUTH_ENABLED_PLACEHOLDER__
 
       - name: Build distributions
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist/deeptutor
+          mkdir -p dist/nexatutor
           # Run from /tmp so any repository-local build/ directory cannot shadow
           # PyPA's `build` module during repeated package builds.
           # Wheels are the supported public install artifacts. The full app
           # wheel contains packaged Next.js assets; source distributions would
           # either duplicate those large assets or require a frontend build.
-          (cd /tmp && python -m build --wheel --outdir "$GITHUB_WORKSPACE/dist/deeptutor" "$GITHUB_WORKSPACE")
+          (cd /tmp && python -m build --wheel --outdir "$GITHUB_WORKSPACE/dist/nexatutor" "$GITHUB_WORKSPACE")
 
       - name: Verify package metadata
         run: |
-          python -m twine check dist/deeptutor/*
+          python -m twine check dist/nexatutor/*
           python - <<'PY'
           from pathlib import Path
           expected = "${{ steps.version.outputs.version }}"
           files = {
-              "deeptutor": sorted(path.name for path in Path("dist/deeptutor").glob("*")),
+              "nexatutor": sorted(path.name for path in Path("dist/nexatutor").glob("*")),
           }
           for package, names in files.items():
               print(package)
               print("\n".join(f"  {name}" for name in names))
           required = [
-              ("deeptutor", f"deeptutor-{expected}-py3-none-any.whl"),
+              ("nexatutor", f"nexatutor-{expected}-py3-none-any.whl"),
           ]
           missing = [name for package, name in required if name not in files[package]]
           if missing:
               raise SystemExit(f"Missing expected distributions: {missing}")
           PY
 
-      - name: Publish deeptutor to PyPI
+      - name: Publish nexatutor to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist/deeptutor/
+          packages-dir: dist/nexatutor/
           print-hash: true

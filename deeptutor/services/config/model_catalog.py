@@ -45,7 +45,6 @@ def _default_catalog() -> dict[str, Any]:
             "tts": _service_shell(),
             "stt": _service_shell(),
             "imagegen": _service_shell(),
-            "videogen": _service_shell(),
         },
     }
 
@@ -70,7 +69,13 @@ class ModelCatalogService:
         if loaded:
             catalog = _default_catalog()
             catalog.update({k: v for k, v in loaded.items() if k != "services"})
-            catalog["services"].update(loaded.get("services", {}))
+            catalog["services"].update(
+                {
+                    name: value
+                    for name, value in (loaded.get("services", {}) or {}).items()
+                    if name != "videogen"
+                }
+            )
             merged_defaults = catalog != loaded
             before = deepcopy(catalog)
             self._normalize(catalog)
@@ -96,6 +101,11 @@ class ModelCatalogService:
         with self._lock:
             normalized = deepcopy(catalog)
             self._normalize(normalized)
+            persisted = deepcopy(normalized)
+            existing = self._read_existing_catalog()
+            legacy_videogen = (existing.get("services", {}) or {}).get("videogen")
+            if legacy_videogen is not None:
+                persisted.setdefault("services", {})["videogen"] = legacy_videogen
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd, temp_name = tempfile.mkstemp(
                 prefix=f".{self.path.name}.",
@@ -105,7 +115,7 @@ class ModelCatalogService:
             temp_path = Path(temp_name)
             try:
                 with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-                    json.dump(normalized, handle, indent=2, ensure_ascii=False)
+                    json.dump(persisted, handle, indent=2, ensure_ascii=False)
                     handle.write("\n")
                     handle.flush()
                     os.fsync(handle.fileno())
@@ -113,6 +123,50 @@ class ModelCatalogService:
             finally:
                 temp_path.unlink(missing_ok=True)
             return normalized
+
+    @staticmethod
+    def public_catalog(catalog: dict[str, Any]) -> dict[str, Any]:
+        """Return catalog metadata without provider credentials."""
+        public = deepcopy(catalog)
+        for service in public.get("services", {}).values():
+            if not isinstance(service, dict):
+                continue
+            for profile in service.get("profiles", []):
+                if not isinstance(profile, dict):
+                    continue
+                profile["api_key_set"] = bool(profile.get("api_key"))
+                profile["api_key"] = ""
+                profile.pop("api_key_clear", None)
+        return public
+
+    @staticmethod
+    def merge_catalog_secrets(
+        incoming: dict[str, Any], existing: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Merge write-only API key fields without exposing stored values."""
+        merged = deepcopy(incoming)
+        existing_services = existing.get("services", {})
+        for service_name, service in merged.get("services", {}).items():
+            if not isinstance(service, dict):
+                continue
+            old_profiles = {
+                str(profile.get("id")): profile
+                for profile in existing_services.get(service_name, {}).get("profiles", [])
+                if isinstance(profile, dict)
+            }
+            for profile in service.get("profiles", []):
+                if not isinstance(profile, dict):
+                    continue
+                old = old_profiles.get(str(profile.get("id")), {})
+                if profile.pop("api_key_clear", False):
+                    profile["api_key"] = ""
+                elif not str(profile.get("api_key") or "") and profile.get("api_key_set"):
+                    profile["api_key"] = str(old.get("api_key") or "")
+                profile.pop("api_key_set", None)
+        return merged
+
+    def merge_secrets(self, incoming: dict[str, Any]) -> dict[str, Any]:
+        return self.merge_catalog_secrets(incoming, self.load())
 
     def update(self, mutator: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
         with self._lock:
@@ -133,8 +187,8 @@ class ModelCatalogService:
         services.setdefault("tts", _service_shell())
         services.setdefault("stt", _service_shell())
         services.setdefault("imagegen", _service_shell())
-        services.setdefault("videogen", _service_shell())
-        for service_name in ("llm", "embedding", "search", "tts", "stt", "imagegen", "videogen"):
+        services.pop("videogen", None)
+        for service_name in ("llm", "embedding", "search", "tts", "stt", "imagegen"):
             service = services[service_name]
             profiles = service.setdefault("profiles", [])
             for profile in profiles:
@@ -192,15 +246,11 @@ class ModelCatalogService:
                             model.setdefault("quality", "")
                             model.setdefault("style", "")
                             model.setdefault("response_format", "")
-                        elif service_name == "videogen":
-                            model.setdefault("aspect_ratio", "")
-                            model.setdefault("duration", "")
-                            model.setdefault("resolution", "")
             profile_ids = {profile.get("id") for profile in profiles}
             if profiles and service.get("active_profile_id") not in profile_ids:
                 service["active_profile_id"] = profiles[0]["id"]
                 changed = True
-            if service_name in {"llm", "embedding", "tts", "stt", "imagegen", "videogen"}:
+            if service_name in {"llm", "embedding", "tts", "stt", "imagegen"}:
                 active_profile = self.get_active_profile(catalog, service_name)
                 models = (active_profile or {}).get("models") or []
                 model_ids = {model.get("id") for model in models}
@@ -236,16 +286,6 @@ class ModelCatalogService:
 
 
 def get_model_catalog_service() -> ModelCatalogService:
-    try:
-        from deeptutor.multi_user.context import get_current_user
-        from deeptutor.multi_user.paths import get_admin_path_service
-
-        if not get_current_user().is_admin:
-            return ModelCatalogService.get_instance(
-                get_admin_path_service().get_settings_file("model_catalog")
-            )
-    except Exception:
-        pass
     return ModelCatalogService.get_instance(get_path_service().get_settings_file("model_catalog"))
 
 

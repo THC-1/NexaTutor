@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 
 function readJsonFile(filePath) {
@@ -21,32 +20,8 @@ function firstNonEmpty(...values) {
   return "";
 }
 
-function normalizeBoolean(value) {
-  if (value === "__NEXT_PUBLIC_AUTH_ENABLED_PLACEHOLDER__") {
-    return value;
-  }
-  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase())
-    ? "true"
-    : "false";
-}
-
-/** This machine's non-loopback IPv4 addresses — the hosts `next dev` prints
- *  as "Network:", i.e. the ones a phone on the same WiFi actually types. */
-function localNetworkHosts() {
-  const hosts = [];
-  for (const addresses of Object.values(os.networkInterfaces())) {
-    for (const address of addresses ?? []) {
-      if (address.family === "IPv4" && !address.internal) {
-        hosts.push(address.address);
-      }
-    }
-  }
-  return hosts;
-}
-
 const SETTINGS_DIR = path.resolve(__dirname, "..", "data", "user", "settings");
 const SYSTEM_SETTINGS = readJsonFile(path.join(SETTINGS_DIR, "system.json"));
-const AUTH_SETTINGS = readJsonFile(path.join(SETTINGS_DIR, "auth.json"));
 const BACKEND_PORT = firstNonEmpty(
   process.env.BACKEND_PORT,
   SYSTEM_SETTINGS.backend_port,
@@ -56,24 +31,12 @@ const BACKEND_PORT = firstNonEmpty(
 // Use data/user/settings as the frontend source of truth. Environment values
 // remain explicit deployment overrides for Docker/CI.
 const NEXT_PUBLIC_API_BASE = firstNonEmpty(
-  process.env.NEXT_PUBLIC_API_BASE_EXTERNAL,
-  SYSTEM_SETTINGS.next_public_api_base_external,
   process.env.NEXT_PUBLIC_API_BASE,
   SYSTEM_SETTINGS.next_public_api_base,
   `http://localhost:${BACKEND_PORT}`,
 );
 
-const NEXT_PUBLIC_AUTH_ENABLED = normalizeBoolean(
-  firstNonEmpty(
-    process.env.NEXT_PUBLIC_AUTH_ENABLED,
-    process.env.AUTH_ENABLED,
-    AUTH_SETTINGS.enabled,
-    "false",
-  ),
-);
-
 process.env.NEXT_PUBLIC_API_BASE = NEXT_PUBLIC_API_BASE;
-process.env.NEXT_PUBLIC_AUTH_ENABLED = NEXT_PUBLIC_AUTH_ENABLED;
 
 // Resolve the build-time application version from the single source of
 // truth at ``deeptutor/__version__.py``. The Python file is parsed with a
@@ -95,14 +58,16 @@ const nextConfig = {
   // `.next` development cache used by the explicit `deeptutor start --dev`.
   // Without separate directories either command can invalidate the other
   // process while it is running.
-  distDir: process.env.DEEPTUTOR_NEXT_DIST_DIR || ".next",
+  distDir:
+    process.env.NEXATUTOR_NEXT_DIST_DIR ||
+    process.env.DEEPTUTOR_NEXT_DIST_DIR ||
+    ".next",
 
   // Expose the build-time version to the browser so the sidebar badge
   // can compare it against GitHub's latest release.
   env: {
     NEXT_PUBLIC_APP_VERSION: APP_VERSION,
     NEXT_PUBLIC_API_BASE,
-    NEXT_PUBLIC_AUTH_ENABLED,
   },
 
   // Standalone output: self-contained server.js + minimal node_modules
@@ -132,14 +97,8 @@ const nextConfig = {
   // allow-list. Without it, browsing http://127.0.0.1:<port>/ against a dev
   // server bound to localhost silently breaks client hydration — the SSR HTML
   // renders, but no React event handlers or effects ever attach.
-  // The same applies to a phone or tablet on the LAN: `next dev` advertises a
-  // "Network: http://<lan-ip>:<port>" address, and that host has to be on the
-  // list too or the device gets the identical hydrated-nothing shell — a
-  // top bar with an empty page under it. Detected rather than hard-coded so it
-  // follows whatever network this machine is on. Dev-only: `allowedDevOrigins`
-  // has no effect on `next build`/`next start`, and anyone who can reach the
-  // dev server on these addresses is already inside the LAN.
-  allowedDevOrigins: ["127.0.0.1", ...localNetworkHosts()],
+  // Dev-only: `allowedDevOrigins` has no effect on `next build`/`next start`.
+  allowedDevOrigins: ["127.0.0.1"],
 
   // Turbopack configuration (used when running `npm run dev:turbo`)
   turbopack: {

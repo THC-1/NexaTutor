@@ -20,6 +20,7 @@ RUNTIME_ENV_KEYS = (
     "CHAT_ATTACHMENT_DIR",
     "AUTH_ENABLED",
     "NEXT_PUBLIC_AUTH_ENABLED",
+    "DEEPTUTOR_AUTH_ENABLED",
     "AUTH_USERNAME",
     "AUTH_PASSWORD_HASH",
     "AUTH_TOKEN_EXPIRE_HOURS",
@@ -50,11 +51,9 @@ def test_runtime_settings_creates_defaults_without_reading_dotenv(tmp_path: Path
     service = RuntimeSettingsService(tmp_path / "settings")
 
     assert service.load_system(include_process_overrides=False)["backend_port"] == 8001
-    assert service.load_auth(include_process_overrides=False)["enabled"] is False
-    assert service.load_integrations(include_process_overrides=False)["pocketbase_url"] == ""
-
     assert _read_json(service.path_for("system"))["backend_port"] == 8001
-    assert _read_json(service.path_for("auth"))["enabled"] is False
+    assert not service.path_for("auth").exists()
+    assert not service.path_for("integrations").exists()
 
 
 def test_runtime_process_env_is_explicit_override(tmp_path: Path) -> None:
@@ -63,19 +62,18 @@ def test_runtime_process_env_is_explicit_override(tmp_path: Path) -> None:
         process_env={
             "BACKEND_PORT": "9100",
             "AUTH_ENABLED": "true",
-            "POCKETBASE_PORT": "9090",
+            "NEXT_PUBLIC_AUTH_ENABLED": "true",
+            "DEEPTUTOR_AUTH_ENABLED": "true",
         },
     )
     service.save_system({"backend_port": 8001, "frontend_port": 3782})
-    service.save_auth({"enabled": False, "username": "admin"})
-    service.save_integrations({"pocketbase_port": 8090})
 
     assert service.load_system()["backend_port"] == 9100
-    assert service.load_auth()["enabled"] is True
-    assert service.load_integrations()["pocketbase_port"] == 9090
     assert _read_json(service.path_for("system"))["backend_port"] == 8001
-    assert _read_json(service.path_for("auth"))["enabled"] is False
-    assert _read_json(service.path_for("integrations"))["pocketbase_port"] == 8090
+    assert not any("AUTH" in key for key in service.render_environment())
+    assert not any("POCKETBASE" in key for key in service.render_environment())
+    assert not hasattr(service, "load_auth")
+    assert not hasattr(service, "save_auth")
 
 
 def test_render_environment_uses_json_backed_runtime_names(monkeypatch, tmp_path: Path) -> None:
@@ -85,36 +83,26 @@ def test_render_environment_uses_json_backed_runtime_names(monkeypatch, tmp_path
         {
             "backend_port": 8010,
             "frontend_port": 3790,
-            "cors_origins": ["https://app.example"],
             "disable_ssl_verify": True,
         }
     )
-    service.save_auth({"enabled": True, "username": "admin", "token_expire_hours": 12})
-    service.save_integrations(
-        {
-            "pocketbase_url": "http://pocketbase:8090",
-            "pocketbase_admin_email": "admin@example.com",
-        }
+    service.path_for("auth").parent.mkdir(parents=True, exist_ok=True)
+    service.path_for("auth").write_text(
+        json.dumps({"enabled": True, "username": "legacy-admin"}),
+        encoding="utf-8",
     )
-
     env = service.render_environment()
 
     assert env["BACKEND_PORT"] == "8010"
     assert env["FRONTEND_PORT"] == "3790"
-    assert env["CORS_ORIGINS"] == "https://app.example"
     assert env["DISABLE_SSL_VERIFY"] == "true"
-    assert env["AUTH_ENABLED"] == "true"
-    assert env["NEXT_PUBLIC_AUTH_ENABLED"] == "true"
+    assert not any("AUTH" in key for key in env)
     # Server-side proxy contract consumed by web/proxy.ts (the Next.js
-    # middleware). DEEPTUTOR_AUTH_ENABLED gates the login redirect;
-    # DEEPTUTOR_API_BASE_URL is where the frontend server reaches the backend
+    # middleware). DEEPTUTOR_API_BASE_URL is where the frontend server reaches the backend
     # (falls back to the IPv4 loopback on <backend_port> when no in-network /
     # external base is configured — see the dedicated test below for why).
-    assert env["DEEPTUTOR_AUTH_ENABLED"] == "true"
-    assert env["DEEPTUTOR_API_BASE_URL"] == "http://127.0.0.1:8010"
-    assert env["AUTH_TOKEN_EXPIRE_HOURS"] == "12"
-    assert env["POCKETBASE_URL"] == "http://pocketbase:8090"
-    assert "AUTH_SECRET" not in env
+    assert env["NEXATUTOR_API_BASE_URL"] == "http://127.0.0.1:8010"
+    assert not any("POCKETBASE" in key for key in env)
 
 
 def test_api_base_url_falls_back_to_ipv4_loopback(monkeypatch, tmp_path: Path) -> None:
@@ -131,7 +119,7 @@ def test_api_base_url_falls_back_to_ipv4_loopback(monkeypatch, tmp_path: Path) -
 
     env = service.render_environment()
 
-    assert env["DEEPTUTOR_API_BASE_URL"] == "http://127.0.0.1:8042"
+    assert env["NEXATUTOR_API_BASE_URL"] == "http://127.0.0.1:8042"
 
 
 def test_api_base_url_prefers_a_configured_base_over_the_loopback(
@@ -149,10 +137,10 @@ def test_api_base_url_prefers_a_configured_base_over_the_loopback(
 
     env = service.render_environment()
 
-    assert env["DEEPTUTOR_API_BASE_URL"] == "http://backend.internal:9000"
+    assert env["NEXATUTOR_API_BASE_URL"] == "http://backend.internal:9000"
 
 
-def test_system_settings_accept_public_api_base_alias_and_normalize_origins(
+def test_system_settings_ignore_legacy_public_api_and_origins(
     monkeypatch, tmp_path: Path
 ) -> None:
     _clear_runtime_env(monkeypatch)
@@ -165,11 +153,8 @@ def test_system_settings_accept_public_api_base_alias_and_normalize_origins(
         }
     )
 
-    assert system["next_public_api_base_external"] == "https://api.example.com/base"
-    assert system["cors_origins"] == [
-        "http://app.example.com",
-        "https://learn.example.com",
-    ]
+    assert "next_public_api_base_external" not in system
+    assert "cors_origins" not in system
     assert "public_api_base" not in _read_json(service.path_for("system"))
 
 
@@ -178,17 +163,13 @@ def test_exported_environment_does_not_become_runtime_override(monkeypatch, tmp_
 
     service = RuntimeSettingsService(tmp_path / "settings")
     service.save_system({"backend_port": 8010})
-    service.save_auth({"enabled": False})
 
     service.export_environment(overwrite=True)
     assert service.load_system()["backend_port"] == 8010
-    assert service.load_auth()["enabled"] is False
 
     service.save_system({"backend_port": 8020})
-    service.save_auth({"enabled": True})
 
     assert service.load_system()["backend_port"] == 8020
-    assert service.load_auth()["enabled"] is True
 
 
 def test_existing_process_environment_remains_deployment_override(
@@ -225,16 +206,14 @@ def test_startup_ensure_creates_missing_runtime_jsons_with_defaults(
     ensure_runtime_settings_files()
 
     assert (settings_dir / "system.json").exists()
-    assert (settings_dir / "auth.json").exists()
-    assert (settings_dir / "integrations.json").exists()
+    assert not (settings_dir / "auth.json").exists()
+    assert not (settings_dir / "integrations.json").exists()
     assert (settings_dir / "document_parsing.json").exists()
     assert (settings_dir / "model_catalog.json").exists()
     _parsing_file = _read_json(settings_dir / "document_parsing.json")
     assert _parsing_file["version"] == 2
     assert _parsing_file["engines"]["mineru"]["mode"] == "local"
     assert _read_json(settings_dir / "system.json")["backend_port"] == 8001
-    assert _read_json(settings_dir / "auth.json")["enabled"] is False
-    assert _read_json(settings_dir / "integrations.json")["pocketbase_url"] == ""
     assert set(_read_json(settings_dir / "model_catalog.json")["services"]) == {
         "llm",
         "embedding",
@@ -242,7 +221,6 @@ def test_startup_ensure_creates_missing_runtime_jsons_with_defaults(
         "tts",
         "stt",
         "imagegen",
-        "videogen",
     }
 
 
@@ -413,10 +391,9 @@ def test_runtime_settings_can_ignore_process_overrides(tmp_path: Path) -> None:
         },
     )
     service.save_system({"backend_port": 8001})
-    service.save_auth({"enabled": False})
 
     assert service.load_system()["backend_port"] == 8001
-    assert service.load_auth()["enabled"] is False
+    assert not any("AUTH" in key for key in service.render_environment())
 
 
 def test_chat_attachment_limits_defaults_and_clamping(tmp_path: Path) -> None:

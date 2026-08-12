@@ -1,9 +1,6 @@
 """AI judge WebSocket — grades a learner's quiz answer.
 
-Mounted on its own (without router-level HTTP auth dependencies) because
-WebSocket upgrades cannot use FastAPI's HTTP dependency injection, so we
-rely on ``ws_require_auth`` inside the handler — mirroring the pattern
-used by ``unified_ws``.
+Mounted on its own as a local WebSocket endpoint.
 """
 
 from __future__ import annotations
@@ -197,9 +194,6 @@ def _guess_image_mime(filename: str | None) -> str:
 async def websocket_quiz_judge(websocket: WebSocket):
     """Stream an AI judgment for a single quiz answer.
 
-    Auth is enforced via ``ws_require_auth`` rather than a router-level
-    HTTP dependency — see module docstring.
-
     Client → Server (initial JSON):
         {
             "question": str,
@@ -227,13 +221,6 @@ async def websocket_quiz_judge(websocket: WebSocket):
         {"type": "done"}
         {"type": "error", "content": "..."}
     """
-    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
-
-    user_token = await ws_require_auth(websocket)
-    if user_token is ws_auth_failed:
-        return
-
     await websocket.accept()
 
     async def safe_send(payload: dict[str, Any]) -> bool:
@@ -253,11 +240,6 @@ async def websocket_quiz_judge(websocket: WebSocket):
             await websocket.close()
         except Exception:
             pass
-        if user_token is not None:
-            try:
-                reset_current_user(user_token)
-            except Exception:
-                pass
         return
 
     question_text = (data.get("question") or "").strip()
@@ -267,11 +249,6 @@ async def websocket_quiz_judge(websocket: WebSocket):
             await websocket.close()
         except Exception:
             pass
-        if user_token is not None:
-            try:
-                reset_current_user(user_token)
-            except Exception:
-                pass
         return
 
     requested_language = (data.get("language") or "").strip().lower()
@@ -359,11 +336,6 @@ async def websocket_quiz_judge(websocket: WebSocket):
             await websocket.close()
         except Exception:
             pass
-        if user_token is not None:
-            try:
-                reset_current_user(user_token)
-            except Exception:
-                pass
         return
 
     await safe_send({"type": "started"})
@@ -420,8 +392,3 @@ async def websocket_quiz_judge(websocket: WebSocket):
             await websocket.close()
         except Exception:
             pass
-        if user_token is not None:
-            try:
-                reset_current_user(user_token)
-            except Exception:
-                pass

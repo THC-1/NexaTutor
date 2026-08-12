@@ -51,7 +51,7 @@ class SourceEntry:
     """One row in the per-turn Attached Sources manifest."""
 
     sid: str
-    kind: str  # "notebook" | "book" | "history" | "question" | "attachment"
+    kind: str  # "notebook" | "history" | "question" | "attachment"
     name: str
     full_text: str
     fresh: bool
@@ -113,8 +113,6 @@ async def build_inventory(
     current_turn_ordinal: int,
     fresh_attachment_records: Sequence[dict[str, Any]],
     fresh_notebook_records: Sequence[dict[str, Any]],
-    fresh_book_context_text: str,
-    fresh_book_references: Sequence[dict[str, Any]],
     fresh_history_session_ids: Sequence[Any],
     fresh_question_entry_ids: Sequence[Any],
     language: str = "en",
@@ -124,9 +122,8 @@ async def build_inventory(
     Fresh refs are added first (so they shadow historical entries on the
     same sid); historical refs are then collected from the active branch's
     ancestor messages. The caller passes already-resolved notebook records
-    and the already-rendered book context — keeping side-effects (LLM
-    summarisation, file I/O) under the caller's control rather than buried
-    inside this module.
+    while keeping side-effects (LLM summarisation and file I/O) under the
+    caller's control rather than buried inside this module.
     """
     inv = SourceInventory()
     _add_fresh(
@@ -134,8 +131,6 @@ async def build_inventory(
         current_turn_ordinal=current_turn_ordinal,
         attachment_records=fresh_attachment_records,
         notebook_records=fresh_notebook_records,
-        book_context_text=fresh_book_context_text,
-        book_references=fresh_book_references,
     )
     # History + question entries are async (per-id store fetches), keep them
     # in a separate phase so the sync fresh additions don't block.
@@ -237,11 +232,8 @@ def _add_fresh(
     current_turn_ordinal: int,
     attachment_records: Sequence[dict[str, Any]],
     notebook_records: Sequence[dict[str, Any]],
-    book_context_text: str,
-    book_references: Sequence[dict[str, Any]],
 ) -> None:
-    """Add the synchronously-available fresh sources (notebook records,
-    book pages, attachments)."""
+    """Add synchronously available notebook records and attachments."""
     for rec in notebook_records:
         rid = str(rec.get("id", "") or "").strip()
         full = str(rec.get("output", "") or "")
@@ -253,26 +245,6 @@ def _add_fresh(
                 kind="notebook",
                 name=str(rec.get("title") or rec.get("name") or "Untitled record"),
                 full_text=full,
-                fresh=True,
-                first_seen_turn=current_turn_ordinal,
-            )
-        )
-
-    # Books: split the cumulative ``build_book_context`` output by the
-    # ``---`` section separator so each book gets its own ``bk-{book_id}``
-    # sid. The order in ``book_references`` matches the order
-    # ``build_book_context`` produces sections in, so we can zip them.
-    book_sections = _split_book_sections(book_context_text)
-    for ref, section in zip(book_references, book_sections, strict=False):
-        book_id = str(ref.get("book_id") or "").strip()
-        if not book_id or not section.strip():
-            continue
-        inv.add(
-            SourceEntry(
-                sid=f"bk-{book_id}",
-                kind="book",
-                name=_extract_book_title(section, fallback=f"Book {book_id}"),
-                full_text=section,
                 fresh=True,
                 first_seen_turn=current_turn_ordinal,
             )
@@ -456,30 +428,6 @@ async def _collect_from_user_message(
                 )
             )
 
-    # Books — one source per book_id (union of page ranges across all
-    # turns is implicit because we always pull the *current* book reference
-    # to render).
-    for ref in snap.get("bookReferences") or []:
-        book_id = str((ref or {}).get("book_id") or "").strip()
-        if not book_id:
-            continue
-        sid = f"bk-{book_id}"
-        if sid in inv:
-            continue
-        section_text, name = _resolve_book_section(ref)
-        if not section_text.strip():
-            continue
-        inv.add(
-            SourceEntry(
-                sid=sid,
-                kind="book",
-                name=name,
-                full_text=section_text,
-                fresh=False,
-                first_seen_turn=turn_ordinal,
-            )
-        )
-
     # History sessions — async, one store fetch per id.
     for raw in snap.get("historyReferences") or []:
         hs_id = str(raw or "").strip()
@@ -565,50 +513,6 @@ async def _load_lineage(
     return chain
 
 
-# ----- Per-type resolvers shared by fresh + historical paths --------------
-
-
-def _split_book_sections(book_context_text: str) -> list[str]:
-    """Split the output of ``build_book_context`` back into per-book
-    sections. ``build_book_context`` joins sections with ``"\\n\\n---\\n\\n"``;
-    we split on the same separator. Returns an empty list when input is
-    empty."""
-    if not book_context_text.strip():
-        return []
-    return [seg for seg in book_context_text.split("\n\n---\n\n") if seg.strip()]
-
-
-def _extract_book_title(section: str, *, fallback: str) -> str:
-    """``_serialize_book_header`` prefixes every section with
-    ``# Book: <title>`` — extract that here for the manifest's name field."""
-    first_line = section.lstrip().split("\n", 1)[0]
-    prefix = "# Book: "
-    if first_line.startswith(prefix):
-        return first_line[len(prefix) :].strip() or fallback
-    return fallback
-
-
-def _resolve_book_section(book_reference: dict[str, Any]) -> tuple[str, str]:
-    """Resolve a single book reference into its serialized section + title.
-
-    Used by the historical-collection path where each past turn's book
-    reference is rendered independently (so the per-book ``bk-{book_id}``
-    source id stays stable). Returns ``("", "")`` on failure.
-    """
-    from deeptutor.book.context import build_book_context
-
-    try:
-        result = build_book_context([book_reference])
-    except Exception:
-        logger.debug("Failed to resolve historical book reference", exc_info=True)
-        return "", ""
-    text = (result.text or "").strip()
-    if not text:
-        return "", ""
-    name = _extract_book_title(text, fallback=f"Book {book_reference.get('book_id', '?')}")
-    return text, name
-
-
 # Human labels for the external agents a session can be imported from. The
 # import source is recorded at import time in ``preferences["import"]["source"]``
 # (see ``deeptutor/api/routers/imports.py``).
@@ -624,16 +528,11 @@ def _imported_agent_label(meta: dict[str, Any], lang: str) -> str | None:
 
     A referenced session is "imported" when its id carries the ``imported_``
     prefix or its preferences hold the ``import`` block written at import time.
-    A referenced *partner* session (resolved by :func:`_load_partner_session`)
-    carries ``source == "partner"`` and is framed with the partner's own name.
     """
     prefs = meta.get("preferences") if isinstance(meta, dict) else None
     import_meta = prefs.get("import") if isinstance(prefs, dict) else None
     source = str((import_meta or {}).get("source") or "").strip().lower()
     sid = str(meta.get("session_id") or meta.get("id") or "")
-    if source == "partner":
-        name = str(meta.get("partner_name") or "").strip()
-        return name or ("伙伴" if lang == "zh" else "a partner")
     if not source and not sid.startswith("imported_"):
         return None
     if source in _EXTERNAL_AGENT_LABELS:
@@ -713,56 +612,6 @@ def serialize_referenced_transcript(
     return header + "\n\n" + "\n\n".join(lines)
 
 
-# A referenced *partner* session: ``partner:{partner_id}:{session_key}``. The
-# session_key itself may contain ``:`` (e.g. ``web:abc``), so only the partner
-# id is split off — partner ids are colon-free slugs.
-_PARTNER_REF_PREFIX = "partner:"
-
-
-def _load_partner_session(ref: str, *, language: str = "en") -> tuple[str, str]:
-    """Resolve a ``partner:{pid}:{session_key}`` reference into transcript + title.
-
-    Partner conversations live in the admin-scoped ``PartnerSessionStore`` (one
-    JSONL per session under ``data/partners/<id>/sessions/``), not the main
-    session store — so they resolve here through the partner manager rather than
-    ``store.get_session``. Gated to admins: partner data is admin-scoped (the
-    whole partners API is admin-gated), and this read runs inside the user's
-    turn, so a non-admin must not be able to pull a partner's transcript by
-    hand-crafting a reference id. Returns ``("", "")`` on any miss.
-    """
-    rest = ref[len(_PARTNER_REF_PREFIX) :]
-    pid, _, session_key = rest.partition(":")
-    pid, session_key = pid.strip(), session_key.strip()
-    if not pid or not session_key:
-        return "", ""
-
-    from deeptutor.multi_user.context import get_current_user
-
-    if not get_current_user().is_admin:
-        return "", ""
-    try:
-        from deeptutor.services.partners import get_partner_manager
-
-        manager = get_partner_manager()
-        if not manager.partner_exists(pid):
-            return "", ""
-        messages = manager.get_history(pid, session_key=session_key, limit=400)
-        config = manager.load_config(pid)
-    except Exception:
-        logger.debug("Failed to resolve partner session %r", ref, exc_info=True)
-        return "", ""
-
-    partner_name = (getattr(config, "name", "") or pid).strip()
-    meta = {"preferences": {"import": {"source": "partner"}}, "partner_name": partner_name}
-    transcript = serialize_referenced_transcript(meta, messages, language=language)
-    if not transcript:
-        return "", ""
-    opener = next((m for m in messages if str(m.get("role")) == "user"), None)
-    first_line = str((opener or {}).get("content", "") or "").strip().splitlines()
-    title = (first_line[0][:60].strip() if first_line else "") or partner_name
-    return transcript, title
-
-
 async def _load_history_session(
     store: SessionStoreProtocol,
     history_session_id: str,
@@ -772,11 +621,9 @@ async def _load_history_session(
     """Fetch and serialize a referenced history session into transcript +
     title. Returns ``("", "")`` when the session is empty or missing.
 
-    A ``partner:`` reference resolves through the partner store instead of the
-    main session store (see :func:`_load_partner_session`).
+    Legacy non-session references resolve as missing and are left untouched on
+    disk; no removed external runtime is reactivated to read them.
     """
-    if history_session_id.startswith(_PARTNER_REF_PREFIX):
-        return _load_partner_session(history_session_id, language=language)
     try:
         meta = await store.get_session(history_session_id)
     except Exception:

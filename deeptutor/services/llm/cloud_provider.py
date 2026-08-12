@@ -91,12 +91,6 @@ _ssl_warning_logged = False
 _BINDINGS_WITH_EXTRA_BODY_THINKING = frozenset(
     {
         "deepseek",
-        "dashscope",
-        "volcengine",
-        "volcengine_coding_plan",
-        "byteplus",
-        "byteplus_coding_plan",
-        "minimax",
     }
 )
 

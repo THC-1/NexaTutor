@@ -117,11 +117,6 @@ export interface QuizResultItem {
 }
 
 async function expectJson<T>(response: Response): Promise<T> {
-  if (response.status === 401 && typeof window !== "undefined") {
-    const next = encodeURIComponent(window.location.pathname);
-    window.location.href = `/login?next=${next}`;
-    return new Promise(() => {});
-  }
   if (!response.ok) {
     throw new Error(`Request failed: ${response.status}`);
   }

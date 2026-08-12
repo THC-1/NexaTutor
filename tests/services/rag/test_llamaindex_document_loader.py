@@ -68,6 +68,38 @@ def test_loader_routes_parser_files_through_active_parse_engine(
     assert "Block two" in by_name["paper.pdf"]
 
 
+def test_loader_preserves_pdf_page_markers_as_document_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The built-in PDF parser's page markers must survive into RAG nodes."""
+    pytest.importorskip("llama_index.core")
+    from deeptutor.services.parsing.types import ParsedDocument
+    from deeptutor.services.rag.pipelines.llamaindex.document_loader import (
+        LlamaIndexDocumentLoader,
+    )
+
+    pdf_path = tmp_path / "lesson.pdf"
+    pdf_path.write_bytes(b"stub")
+    _install_stub_parse_service(
+        monkeypatch,
+        {
+            "lesson.pdf": ParsedDocument(
+                markdown=(
+                    "--- Page 1 ---\nFirst-page theorem.\n\n"
+                    "--- Page 2 ---\nSecond-page proof."
+                )
+            )
+        },
+    )
+
+    documents = asyncio.run(LlamaIndexDocumentLoader().load([str(pdf_path)]))
+
+    assert [document.metadata.get("page_label") for document in documents] == ["1", "2"]
+    assert [document.metadata.get("page") for document in documents] == [1, 2]
+    assert documents[0].text == "First-page theorem."
+    assert documents[1].text == "Second-page proof."
+
+
 def test_loader_skips_document_when_active_engine_cannot_parse(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

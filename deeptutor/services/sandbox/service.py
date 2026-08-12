@@ -77,16 +77,6 @@ class SandboxService:
         :attr:`ExecResult.error`."""
         if not await self._ensure_healthy() or self._backend is None:
             return ExecResult(error=self._health_detail or t("sandbox.no_backend"))
-        # Backstop for the per-user exec grant: pipelines hide the exec tool
-        # when the grant denies it, but any path that reaches the sandbox
-        # directly still answers to the same policy.
-        try:
-            from deeptutor.multi_user.tool_access import exec_override
-
-            if exec_override() is False:
-                return ExecResult(error=t("sandbox.disabled_for_account"))
-        except Exception:
-            logger.warning("per-user exec policy check failed; continuing", exc_info=True)
         try:
             lease = await self._quota.acquire(user_id)
         except QuotaExceeded as exc:
@@ -112,16 +102,17 @@ def reset_sandbox_service() -> None:
 
 
 def exec_capability_available(kind: str = "shell") -> bool:
-    """Whether a usable sandbox exists — used by skill ``requires.sandbox``.
+    """Whether a SYSTEM-isolated execution backend is configured.
 
     Synchronous (skill summary rendering is sync). Returns ``True`` when a
     backend is configured at all; the per-run health probe still gates
     actual execution, so a configured-but-down runner won't silently run
     unsandboxed.
     """
-    if kind not in ("", "shell"):
+    if kind not in ("", "shell", "python"):
         return False
-    return get_sandbox_service()._backend is not None
+    backend = get_sandbox_service()._backend
+    return backend is not None and backend.level is IsolationLevel.SYSTEM
 
 
 __all__ = [

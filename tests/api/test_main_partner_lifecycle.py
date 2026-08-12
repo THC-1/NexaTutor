@@ -22,6 +22,11 @@ def test_app_lifespan_does_not_manage_partner_runtime() -> None:
         for node in ast.walk(lifespan)
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
     }
+    called_names = {
+        node.func.id
+        for node in ast.walk(lifespan)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
     imported_modules = {
         node.module
         for node in ast.walk(lifespan)
@@ -30,4 +35,5 @@ def test_app_lifespan_does_not_manage_partner_runtime() -> None:
 
     assert "auto_start_partners" not in called_attributes
     assert "stop_all" not in called_attributes
+    assert "migrate_partner_surface_if_needed" not in called_names
     assert "deeptutor.services.partners" not in imported_modules

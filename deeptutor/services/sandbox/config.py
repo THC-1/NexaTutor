@@ -12,7 +12,7 @@ shape without per-user config:
 
 ``exec`` is offered to ordinary users only when the active backend reaches
 SYSTEM isolation; APPLICATION isolation is admin-opt-in (see
-:mod:`deeptutor.tools.exec_tool`). Per-user quotas live in
+:mod:`deeptutor.tools.builtin`). Per-user quotas live in
 :mod:`deeptutor.services.sandbox.quota`.
 """
 
@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+
+from deeptutor.runtime.env import get_prefixed_env
 
 from deeptutor.services.sandbox.backends import (
     BwrapBackend,
@@ -29,13 +31,13 @@ from deeptutor.services.sandbox.backends import (
 )
 from deeptutor.services.sandbox.spec import ResourceLimits
 
-RUNNER_URL_ENV = "DEEPTUTOR_SANDBOX_RUNNER_URL"
-ALLOW_SUBPROCESS_ENV = "DEEPTUTOR_SANDBOX_ALLOW_SUBPROCESS"
+RUNNER_URL_ENV = "NEXATUTOR_SANDBOX_RUNNER_URL"
+ALLOW_SUBPROCESS_ENV = "NEXATUTOR_SANDBOX_ALLOW_SUBPROCESS"
 
 # Per-user execution quotas (see quota.py). Conservative defaults; override
 # via the matching env vars.
-MAX_CONCURRENT_ENV = "DEEPTUTOR_SANDBOX_MAX_CONCURRENT"
-MAX_PER_MINUTE_ENV = "DEEPTUTOR_SANDBOX_MAX_PER_MINUTE"
+MAX_CONCURRENT_ENV = "NEXATUTOR_SANDBOX_MAX_CONCURRENT"
+MAX_PER_MINUTE_ENV = "NEXATUTOR_SANDBOX_MAX_PER_MINUTE"
 
 
 @dataclass(frozen=True)
@@ -50,13 +52,14 @@ class SandboxSettings:
     def from_env(cls) -> "SandboxSettings":
         def _int(name: str, default: int) -> int:
             try:
-                return int(os.environ.get(name, "") or default)
+                suffix = name.removeprefix("NEXATUTOR_")
+                return int(get_prefixed_env(suffix) or default)
             except ValueError:
                 return default
 
         return cls(
-            runner_url=os.environ.get(RUNNER_URL_ENV, "").strip(),
-            allow_subprocess=os.environ.get(ALLOW_SUBPROCESS_ENV, "").strip()
+            runner_url=get_prefixed_env("SANDBOX_RUNNER_URL").strip(),
+            allow_subprocess=get_prefixed_env("SANDBOX_ALLOW_SUBPROCESS").strip()
             in {"1", "true", "yes"},
             max_concurrent_per_user=_int(MAX_CONCURRENT_ENV, 2),
             max_runs_per_minute_per_user=_int(MAX_PER_MINUTE_ENV, 20),

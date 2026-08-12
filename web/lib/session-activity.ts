@@ -47,9 +47,6 @@ export interface AttachmentWithOrigin {
 
 export interface SpaceReferenceSummary {
   historySessionIds: string[];
-  bookPageCount: number;
-  bookIds: string[];
-  bookPages: Map<string, string[]>;
   notebookRecordCount: number;
   notebookIds: string[];
   questionEntryIds: number[];
@@ -74,9 +71,6 @@ export function buildSessionActivity(messages: MessageItem[]): SessionActivity {
   const toolCounts = new Map<string, number>();
   const kbs = new Set<string>();
   const historySessionIds = new Set<string>();
-  const bookIds = new Set<string>();
-  const bookPages = new Map<string, string[]>();
-  let bookPageCount = 0;
   const notebookIds = new Set<string>();
   let notebookRecordCount = 0;
   const questionEntryIds = new Set<number>();
@@ -108,12 +102,6 @@ export function buildSessionActivity(messages: MessageItem[]): SessionActivity {
     if (snap) {
       snap.knowledgeBases?.forEach((k) => kbs.add(k));
       snap.historyReferences?.forEach((s) => historySessionIds.add(s));
-      snap.bookReferences?.forEach((b) => {
-        bookIds.add(b.book_id);
-        bookPageCount += b.page_ids?.length ?? 0;
-        const existing = bookPages.get(b.book_id) ?? [];
-        bookPages.set(b.book_id, [...existing, ...(b.page_ids ?? [])]);
-      });
       snap.notebookReferences?.forEach((n) => {
         notebookIds.add(n.notebook_id);
         notebookRecordCount += n.record_ids?.length ?? 0;
@@ -130,9 +118,6 @@ export function buildSessionActivity(messages: MessageItem[]): SessionActivity {
 
   const space: SpaceReferenceSummary = {
     historySessionIds: Array.from(historySessionIds),
-    bookPageCount,
-    bookIds: Array.from(bookIds),
-    bookPages,
     notebookRecordCount,
     notebookIds: Array.from(notebookIds),
     questionEntryIds: Array.from(questionEntryIds),
@@ -146,7 +131,6 @@ export function buildSessionActivity(messages: MessageItem[]): SessionActivity {
     attachments.length === 0 &&
     artifacts.length === 0 &&
     space.historySessionIds.length === 0 &&
-    space.bookIds.length === 0 &&
     space.notebookIds.length === 0 &&
     space.questionEntryIds.length === 0 &&
     space.personas.length === 0 &&

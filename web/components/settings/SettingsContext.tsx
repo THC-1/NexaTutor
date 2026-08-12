@@ -36,8 +36,7 @@ export type ServiceName =
   | "search"
   | "tts"
   | "stt"
-  | "imagegen"
-  | "videogen";
+  | "imagegen";
 
 export type CatalogModel = {
   id: string;
@@ -62,10 +61,6 @@ export type CatalogModel = {
   size?: string;
   quality?: string;
   style?: string;
-  // Video generation: aspect ratio (e.g. "16:9"), duration (seconds), resolution.
-  aspect_ratio?: string;
-  duration?: string;
-  resolution?: string;
 };
 
 export type LlmContextWindowDetection = {
@@ -86,6 +81,8 @@ export type CatalogProfile = {
   provider?: string;
   base_url: string;
   api_key: string;
+  api_key_set?: boolean;
+  api_key_clear?: boolean;
   api_version: string;
   extra_headers?: Record<string, string> | string;
   proxy?: string;
@@ -108,7 +105,6 @@ export type Catalog = {
     tts: CatalogService;
     stt: CatalogService;
     imagegen: CatalogService;
-    videogen: CatalogService;
   };
 };
 
@@ -284,9 +280,9 @@ export function voiceService(service: ServiceName): boolean {
   return service === "tts" || service === "stt";
 }
 
-/** imagegen/videogen share the catalog shape but configure media generation. */
+/** Whether a service configures generated media. */
 export function generationService(service: ServiceName): boolean {
-  return service === "imagegen" || service === "videogen";
+  return service === "imagegen";
 }
 
 /** Services whose model entry should prefill from the provider's default model. */
@@ -308,11 +304,6 @@ export function defaultCatalog(): Catalog {
       tts: { active_profile_id: null, active_model_id: null, profiles: [] },
       stt: { active_profile_id: null, active_model_id: null, profiles: [] },
       imagegen: {
-        active_profile_id: null,
-        active_model_id: null,
-        profiles: [],
-      },
-      videogen: {
         active_profile_id: null,
         active_model_id: null,
         profiles: [],
@@ -475,7 +466,7 @@ type SettingsContextValue = {
   updateProfileField: (
     service: ServiceName,
     field: keyof CatalogProfile,
-    value: string,
+    value: CatalogProfile[keyof CatalogProfile],
   ) => void;
   updateModelField: (
     service: ServiceName,
@@ -566,7 +557,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     tts: [],
     stt: [],
     imagegen: [],
-    videogen: [],
   });
   const [toast, setToast] = useState("");
   const [saving, setSaving] = useState(false);
@@ -909,11 +899,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   );
 
   const updateProfileField = useCallback(
-    (service: ServiceName, field: keyof CatalogProfile, value: string) => {
+    (
+      service: ServiceName,
+      field: keyof CatalogProfile,
+      value: CatalogProfile[keyof CatalogProfile],
+    ) => {
       mutateCatalog((next) => {
         const profile = getActiveProfile(next, service);
         if (!profile) return;
-        (profile[field] as string | undefined) = value;
+        Object.assign(profile, { [field]: value });
       });
     },
     [mutateCatalog],

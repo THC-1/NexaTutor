@@ -138,10 +138,11 @@ def test_runner_server_validates_request_shape() -> None:
     from deeptutor.services.sandbox.runner import server
 
     assert "command" in server.execute({})["error"]
-    assert "workdir" in server.execute({"command": "true", "workdir": 123})["error"]
-    assert "env" in server.execute({"command": "true", "env": ["bad"]})["error"]
-    assert "mounts" in server.execute({"command": "true", "mounts": {"bad": True}})["error"]
-    assert "limits" in server.execute({"command": "true", "limits": ["bad"]})["error"]
+    base = {"command": "true", "argv": ["true"]}
+    assert "workdir" in server.execute({**base, "workdir": 123})["error"]
+    assert "env" in server.execute({**base, "env": ["bad"]})["error"]
+    assert "mounts" in server.execute({**base, "mounts": {"bad": True}})["error"]
+    assert "limits" in server.execute({**base, "limits": ["bad"]})["error"]
 
 
 def test_runner_server_executes_and_truncates_output() -> None:
@@ -149,7 +150,8 @@ def test_runner_server_executes_and_truncates_output() -> None:
 
     result = server.execute(
         {
-            "command": "python -c \"print('x' * 200)\"",
+            "command": "python -c 'print('\"'\"'x'\"'\"' * 200)'",
+            "argv": ["python", "-c", "print('x' * 200)"],
             "limits": {"timeout_s": 5, "max_output_chars": 40},
         }
     )
@@ -169,17 +171,17 @@ def test_runner_server_rejects_workdir_outside_allowed_roots(
     allowed.mkdir()
     monkeypatch.setattr(server, "_ALLOWED_WORKDIR_ROOTS", [str(allowed)])
 
-    outside = server.execute({"command": "true", "workdir": str(tmp_path / "elsewhere")})
+    outside = server.execute({"command": "true", "argv": ["true"], "workdir": str(tmp_path / "elsewhere")})
     assert "outside the shared workspace roots" in outside["error"]
 
     # Symlinks that point out of the allowed tree must not slip through.
     sneaky = allowed / "link"
     sneaky.symlink_to(tmp_path)
-    via_link = server.execute({"command": "true", "workdir": str(sneaky)})
+    via_link = server.execute({"command": "true", "argv": ["true"], "workdir": str(sneaky)})
     assert "outside the shared workspace roots" in via_link["error"]
 
     inside = server.execute(
-        {"command": "true", "workdir": str(allowed), "limits": {"timeout_s": 5}}
+        {"command": "true", "argv": ["true"], "workdir": str(allowed), "limits": {"timeout_s": 5}}
     )
     assert inside["error"] == ""
     assert inside["exit_code"] == 0

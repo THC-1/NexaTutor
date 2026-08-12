@@ -30,7 +30,7 @@ class DeepQuestionCapability(BaseCapability):
         name="deep_question",
         description="Fast question generation (Template batches -> Generate).",
         stages=["ideation", "generation"],
-        tools_used=["rag", "web_search", "code_execution"],
+        tools_used=["rag", "web_search"],
         cli_aliases=["quiz"],
         request_schema=get_capability_request_schema("deep_question"),
     )

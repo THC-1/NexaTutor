@@ -91,7 +91,7 @@ def test_ready_version_without_active_signature_marks_reindex(
     assert entry["embedding_mismatch"] is True
 
 
-def test_ready_non_embedding_provider_version_does_not_mark_reindex(
+def test_removed_provider_version_is_inert_and_requires_standard_reindex(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -132,9 +132,8 @@ def test_ready_non_embedding_provider_version_does_not_mark_reindex(
 
     manager = KnowledgeBaseManager(base_dir=str(tmp_path))
     entry = manager.config["knowledge_bases"]["page-kb"]
-    assert entry["rag_provider"] == "pageindex"
-    assert entry.get("needs_reindex", False) is False
-    assert entry.get("embedding_mismatch", False) is False
+    assert entry["rag_provider"] == "llamaindex"
+    assert entry.get("needs_reindex", False) is True
     assert entry["index_versions"][0]["signature"] == "pageindex"
 
 

@@ -71,7 +71,6 @@ from deeptutor.services.llm import get_llm_config, prepare_multimodal_messages
 from deeptutor.services.path_service import get_path_service
 from deeptutor.services.prompt import get_prompt_manager
 from deeptutor.services.prompt.language import append_language_directive
-from deeptutor.services.sandbox import exec_capability_available
 from deeptutor.utils.json_parser import parse_json_response
 
 logger = logging.getLogger(__name__)
@@ -1483,7 +1482,6 @@ class QuestionPipeline:
             has_sources=bool(self._source_index(context)),
             has_memory=user_has_memory(),
             has_notebooks=user_has_notebooks(),
-            has_code=exec_capability_available(),
         )
 
     def _resolved_tools(self, context: UnifiedContext) -> list[str]:
@@ -1555,8 +1553,6 @@ class QuestionPipeline:
                 kwargs["_sandbox_mounts"] = (
                     Mount(host_path=str(code_dir), sandbox_path=str(code_dir), read_only=False),
                 )
-        elif tool_name in {"reason", "brainstorm"}:
-            kwargs.setdefault("context", context.user_message)
         elif tool_name == "web_search":
             kwargs.setdefault("query", context.user_message)
             if task_dir is not None:

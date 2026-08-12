@@ -3,7 +3,7 @@
 /**
  * CapabilityConfigCard — section card hosted at the bottom of the chat
  * Activity panel that holds the configuration form for the active
- * capability (Quiz / Animator / Visualize / Research).
+ * capability (Quiz / Visualize / Research).
  *
  * The body (the actual form) is provided by the parent as children so this
  * card stays agnostic of which fields the capability collects. The card
@@ -19,7 +19,6 @@ import { memo, type ReactNode } from "react";
 import {
   BarChart3,
   Check,
-  Clapperboard,
   Microscope,
   PenLine,
   type LucideIcon,
@@ -28,7 +27,6 @@ import { useTranslation } from "react-i18next";
 
 export type ConfigurableCapability =
   | "deep_question"
-  | "math_animator"
   | "visualize"
   | "deep_research";
 
@@ -39,7 +37,6 @@ interface CapabilityChrome {
 
 const CAPABILITY_CHROME: Record<ConfigurableCapability, CapabilityChrome> = {
   deep_question: { icon: PenLine, label: "Quiz settings" },
-  math_animator: { icon: Clapperboard, label: "Animator settings" },
   visualize: { icon: BarChart3, label: "Visualize settings" },
   deep_research: { icon: Microscope, label: "Research settings" },
 };

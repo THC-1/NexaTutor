@@ -31,8 +31,6 @@ class PromptManager:
         "solve",
         "question",
         "co_writer",
-        "math_animator",
-        "book",
         "notebook",
         "visualize",
         "chat",
@@ -41,7 +39,6 @@ class PromptManager:
     # Modules that are not under deeptutor/agents/ directory
     # Map module_name → on-disk path component under deeptutor/
     NON_AGENT_MODULES: dict[str, str] = {
-        "book": "book",
         "co_writer": "co_writer",
         "capabilities": "capabilities",
     }

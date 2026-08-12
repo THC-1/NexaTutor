@@ -266,31 +266,33 @@ def _patch_runtime(
 
 
 @pytest.mark.asyncio
-async def test_network_settings_roundtrip_normalizes_cors_origins(
+async def test_network_settings_roundtrip_is_local_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
     service = RuntimeSettingsService(tmp_path / "settings", process_env={})
     service.save_system({"backend_port": 8001, "frontend_port": 3782})
-    service.save_auth({"enabled": True, "cookie_secure": True})
+    # A legacy file may remain on disk after upgrading, but the network status
+    # must neither read it nor expose account-auth state again.
+    (tmp_path / "settings" / "auth.json").write_text(
+        json.dumps({"enabled": True, "cookie_secure": True}),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(settings_router, "get_runtime_settings_service", lambda: service)
 
     payload = settings_router.NetworkSettingsUpdate(
         backend_port=8101,
         frontend_port=3882,
-        public_api_base="https://api.example.com/deeptutor",
-        cors_origins=["app.example.com; https://learn.example.com/path"],
     )
 
     response = await settings_router.update_network_settings(payload)
 
     assert response["settings"]["backend_port"] == 8101
-    assert response["settings"]["public_api_base"] == "https://api.example.com/deeptutor"
-    assert response["settings"]["cors_origins"] == [
-        "http://app.example.com",
-        "https://learn.example.com",
-    ]
-    assert response["effective"]["cors_mode"] == "explicit"
-    assert response["auth"]["cross_site_cookie_ready"] is True
+    assert response["settings"]["frontend_port"] == 3882
+    assert response["effective"]["backend_url"] == "http://localhost:8101"
+    assert response["effective"]["frontend_url"] == "http://localhost:3882"
+    assert "public_api_base" not in response["settings"]
+    assert "cors_origins" not in response["settings"]
+    assert "auth" not in response
 
 
 @pytest.mark.asyncio
@@ -528,25 +530,19 @@ def test_embedding_provider_choices_use_full_endpoint_urls() -> None:
     assert "custom_openai_sdk" not in embedding
 
 
-def test_llm_provider_choices_include_atlascloud() -> None:
+def test_llm_provider_choices_exclude_atlascloud() -> None:
     llm = {item["value"]: item for item in settings_router._provider_choices()["llm"]}
-
-    assert llm["atlascloud"]["label"] == "Atlas Cloud"
-    assert llm["atlascloud"]["base_url"] == "https://api.atlascloud.ai/v1"
+    assert "atlascloud" not in llm
 
 
-def test_llm_provider_choices_include_novita() -> None:
+def test_llm_provider_choices_exclude_novita() -> None:
     llm = {item["value"]: item for item in settings_router._provider_choices()["llm"]}
-
-    assert llm["novita"]["label"] == "Novita AI"
-    assert llm["novita"]["base_url"] == "https://api.novita.ai/openai"
+    assert "novita" not in llm
 
 
-def test_llm_provider_choices_include_edenai() -> None:
+def test_llm_provider_choices_exclude_edenai() -> None:
     llm = {item["value"]: item for item in settings_router._provider_choices()["llm"]}
-
-    assert llm["edenai"]["label"] == "Eden AI"
-    assert llm["edenai"]["base_url"] == "https://api.edenai.run/v3"
+    assert "edenai" not in llm
 
 
 @pytest.mark.asyncio
@@ -617,7 +613,9 @@ async def test_update_catalog_invalidates_runtime_caches(monkeypatch: pytest.Mon
     new_llm_client = llm_client_module.get_llm_client()
     new_embedding_client = embedding_client_module.get_embedding_client()
 
-    assert response == {"catalog": updated_catalog}
+    response_profile = response["catalog"]["services"]["llm"]["profiles"][0]
+    assert response_profile["api_key"] == ""
+    assert response_profile["api_key_set"] is True
     assert old_llm_config.model == "gpt-old"
     assert new_llm_config.model == "gpt-new"
     assert new_llm_config.base_url == "https://new-llm.example/v1"
@@ -662,7 +660,9 @@ async def test_apply_catalog_invalidates_runtime_caches(monkeypatch: pytest.Monk
     new_llm_client = llm_client_module.get_llm_client()
     new_embedding_client = embedding_client_module.get_embedding_client()
 
-    assert response["catalog"] == applied_catalog
+    response_profile = response["catalog"]["services"]["llm"]["profiles"][0]
+    assert response_profile["api_key"] == ""
+    assert response_profile["api_key_set"] is True
     assert response["runtime"]["catalog_path"]
     assert new_llm_config.model == "gpt-after-apply"
     assert new_llm_client is not old_llm_client
@@ -676,18 +676,16 @@ async def test_enabled_tools_roundtrip(monkeypatch: pytest.MonkeyPatch, tmp_path
     settings_file = tmp_path / "interface.json"
     monkeypatch.setattr(settings_router, "_settings_file", lambda: settings_file)
 
-    # Default state — no file yet, so the loader emits the full toggleable set.
-    assert set(settings_router.get_enabled_optional_tools()) == set(
-        settings_router.USER_TOGGLEABLE_TOOL_NAMES
-    )
+    # Code execution is toggleable but deliberately absent from fresh defaults.
+    assert "code_execution" not in settings_router.get_enabled_optional_tools()
 
     # PUT a partial set; unknown tool names get filtered out.
     update = settings_router.EnabledToolsUpdate(
         enabled_tools=["web_search", "reason", "not_a_real_tool"]
     )
     response = await settings_router.update_enabled_tools(update)
-    assert response == {"enabled_optional_tools": ["web_search", "reason"]}
-    assert settings_router.get_enabled_optional_tools() == ["web_search", "reason"]
+    assert response == {"enabled_optional_tools": ["web_search"]}
+    assert settings_router.get_enabled_optional_tools() == ["web_search"]
 
     # Empty selection is a valid "all off" state.
     response = await settings_router.update_enabled_tools(
@@ -872,13 +870,12 @@ async def test_codex_oauth_status_is_reachable_by_an_ordinary_user(
     they could neither be given one nor sign in for themselves. Everything it
     touches — credential store, model catalog, callback route — resolves from
     owner scope, so it is the caller's own login either way. The full
-    authorization contract, including the partner refusal that replaced the
-    admin gate, lives in ``tests/api/test_codex_oauth_scope.py``.
+    authorization contract lives in ``tests/api/test_codex_oauth_scope.py``.
     """
     fake = _FakeCodexOAuthService()
     monkeypatch.setattr(
         settings_router,
-        "get_current_user",
+        "get_local_user",
         lambda: SimpleNamespace(id="u_alice", is_admin=False),
     )
     monkeypatch.setattr(
@@ -898,7 +895,7 @@ async def test_codex_oauth_routes_return_only_public_service_payloads(
     fake = _FakeCodexOAuthService()
     monkeypatch.setattr(
         settings_router,
-        "get_current_user",
+        "get_local_user",
         lambda: SimpleNamespace(id="root", is_admin=True),
     )
     monkeypatch.setattr(
@@ -947,7 +944,7 @@ async def test_codex_oauth_error_maps_to_sanitized_http_detail(
 
     monkeypatch.setattr(
         settings_router,
-        "get_current_user",
+        "get_local_user",
         lambda: SimpleNamespace(id="root", is_admin=True),
     )
     monkeypatch.setattr(

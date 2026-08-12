@@ -4,6 +4,8 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+
 from deeptutor.knowledge.add_documents import (
     DocumentAdder,
     RawDocumentRemoval,
@@ -38,7 +40,7 @@ def _write_provider_version(kb_dir: Path, provider: str) -> None:
     )
 
 
-def test_document_adder_reads_provider_from_kb_config_when_metadata_missing(
+def test_document_adder_does_not_activate_removed_provider_from_config(
     tmp_path: Path,
 ) -> None:
     kb_dir = tmp_path / "page-kb"
@@ -51,23 +53,21 @@ def test_document_adder_reads_provider_from_kb_config_when_metadata_missing(
         encoding="utf-8",
     )
 
-    adder = DocumentAdder(kb_name="page-kb", base_dir=str(tmp_path))
+    with pytest.raises(ValueError, match="llamaindex"):
+        DocumentAdder(kb_name="page-kb", base_dir=str(tmp_path))
 
-    assert adder.rag_provider == "pageindex"
 
-
-def test_document_adder_preserves_explicit_bound_provider(tmp_path: Path) -> None:
+def test_document_adder_does_not_activate_explicit_removed_provider(tmp_path: Path) -> None:
     kb_dir = tmp_path / "graph-kb"
     (kb_dir / "raw").mkdir(parents=True)
     _write_provider_version(kb_dir, "graphrag")
 
-    adder = DocumentAdder(
-        kb_name="graph-kb",
-        base_dir=str(tmp_path),
-        rag_provider="graphrag",
-    )
-
-    assert adder.rag_provider == "graphrag"
+    with pytest.raises(ValueError, match="llamaindex"):
+        DocumentAdder(
+            kb_name="graph-kb",
+            base_dir=str(tmp_path),
+            rag_provider="graphrag",
+        )
 
 
 def test_process_new_documents_returns_failures_without_marking_processed(

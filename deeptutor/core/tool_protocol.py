@@ -186,8 +186,6 @@ class ToolLookup(Protocol):
 
     def get_definitions(self, names: list[str] | None = None) -> list[ToolDefinition]: ...
 
-    def deferred_tools(self) -> list["BaseTool"]: ...
-
     def list_tools(self) -> list[str]: ...
 
     def build_openai_schemas(self, names: list[str] | None = None) -> list[dict[str, Any]]: ...
@@ -209,12 +207,6 @@ class BaseTool(ABC):
 
     Subclasses must implement ``get_definition`` and ``execute``.
 
-    ``deferred`` marks a tool for progressive disclosure: its schema is NOT
-    included in the initial per-turn tool list. Instead, the system prompt
-    carries a one-line entry per deferred tool and the model loads full
-    schemas on demand via the ``load_tools`` tool. Source-agnostic — any
-    registered tool may set it (all MCP tools do).
-
     Example::
 
         class MyTool(BaseTool):
@@ -228,8 +220,6 @@ class BaseTool(ABC):
             async def execute(self, **kwargs) -> ToolResult:
                 return ToolResult(content="result")
     """
-
-    deferred: bool = False
 
     @abstractmethod
     def get_definition(self) -> ToolDefinition:
@@ -251,24 +241,3 @@ class BaseTool(ABC):
     @property
     def name(self) -> str:
         return self.get_definition().name
-
-
-def provider_identity(tool: Any) -> tuple[str, str]:
-    """``(kind, provider_id)`` for a tool from an external provider.
-
-    Returns ``("", "")`` for a built-in. ``kind`` is ``"mcp"`` or ``"cli"``;
-    ``provider_id`` names the specific server or app.
-
-    Lives in this bottom layer because two very different consumers need the
-    same answer: the deferred-tool manifest groups by it, and the dispatcher
-    puts it on every tool call's trace metadata so the UI can say *which* MCP
-    server or CLI app is running rather than showing a mangled tool name. A
-    frontend that recovered this by parsing ``mcp_<server>_<tool>`` would guess
-    wrong the moment a server's name contains an underscore.
-
-    ``server_name`` is the pre-provider spelling of ``provider_id`` and is still
-    read as a fallback, so an adapter that predates the rename keeps working.
-    """
-    kind = str(getattr(tool, "provider_kind", "") or "")
-    provider_id = str(getattr(tool, "provider_id", "") or getattr(tool, "server_name", "") or "")
-    return kind, provider_id

@@ -7,9 +7,8 @@
  * re-render pass that froze the UI for seconds on long chats. This module is
  * the replacement: a targeted, pure, in-place id swap.
  *
- * Ids are typed ``number`` to match ``MessageItem``, but PocketBase-backed
- * deployments deliver string record ids at runtime (the long-standing
- * convention across ``hydrateMessages`` and the session API). All comparisons
+ * Ids are typed ``number`` to match ``MessageItem``, but imported or legacy
+ * sessions can deliver string ids at runtime. All comparisons
  * here are identity-based, so both shapes flow through unchanged; only the
  * "is optimistic" check (`typeof id === "number" && id < 0`) is type-aware.
  */

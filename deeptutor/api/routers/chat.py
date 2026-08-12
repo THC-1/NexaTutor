@@ -58,13 +58,6 @@ async def delete_session(session_id: str):
 
 @router.websocket("/chat")
 async def websocket_chat(websocket: WebSocket):
-    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
-
-    user_token = await ws_require_auth(websocket)
-    if user_token is ws_auth_failed:
-        return
-
     await websocket.accept()
 
     try:
@@ -241,9 +234,3 @@ async def websocket_chat(websocket: WebSocket):
             await websocket.send_json({"type": "error", "message": str(e)})
         except Exception:
             pass
-    finally:
-        if user_token is not None:
-            try:
-                reset_current_user(user_token)
-            except Exception:
-                pass

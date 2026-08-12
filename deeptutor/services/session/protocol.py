@@ -1,8 +1,8 @@
 """
 Structural protocol for session stores.
 
-Both SQLiteSessionStore and PocketBaseSessionStore satisfy this protocol,
-allowing the rest of the codebase to be store-agnostic.
+SQLiteSessionStore satisfies this protocol, allowing the rest of the codebase
+to depend on a narrow storage contract.
 """
 
 from __future__ import annotations

@@ -19,7 +19,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   AtSign,
-  BookOpen,
   Brain,
   ClipboardList,
   Database,
@@ -37,8 +36,6 @@ import { docIconFor, formatBytes, isSvgFilename } from "@/lib/doc-attachments";
 import type { MessageAttachment } from "@/context/UnifiedChatContext";
 import { listSessions, type SessionSummary } from "@/lib/session-api";
 import { listNotebooks, type NotebookSummary } from "@/lib/notebook-api";
-import { bookApi } from "@/lib/book-api";
-import type { Book } from "@/lib/book-types";
 
 import {
   artifactDiskPath,
@@ -64,7 +61,6 @@ export { buildSessionActivity } from "@/lib/session-activity";
 interface ResolvedTitles {
   sessions: Map<string, string>;
   notebooks: Map<string, string>;
-  books: Map<string, string>;
 }
 
 function useResolvedTitles(
@@ -73,11 +69,9 @@ function useResolvedTitles(
 ): ResolvedTitles {
   const [sessions, setSessions] = useState<Map<string, string>>(new Map());
   const [notebooks, setNotebooks] = useState<Map<string, string>>(new Map());
-  const [books, setBooks] = useState<Map<string, string>>(new Map());
 
   const needsSessions = activity.space.historySessionIds.length > 0;
   const needsNotebooks = activity.space.notebookIds.length > 0;
-  const needsBooks = activity.space.bookIds.length > 0;
 
   useEffect(() => {
     if (!open || !needsSessions || sessions.size > 0) return;
@@ -111,24 +105,7 @@ function useResolvedTitles(
     };
   }, [open, needsNotebooks, notebooks.size]);
 
-  useEffect(() => {
-    if (!open || !needsBooks || books.size > 0) return;
-    let cancelled = false;
-    bookApi
-      .list()
-      .then(({ books: rows }: { books: Book[] }) => {
-        if (cancelled) return;
-        const map = new Map<string, string>();
-        rows.forEach((r) => map.set(r.id, r.title || r.id));
-        setBooks(map);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [open, needsBooks, books.size]);
-
-  return { sessions, notebooks, books };
+  return { sessions, notebooks };
 }
 
 /* ------------------------------------------------------------------ */
@@ -153,12 +130,6 @@ const SPACE_CATEGORIES: Record<string, SpaceCategoryDef> = {
     href: "/space/chat-history",
     label: "Chat history",
     icon: History,
-  },
-  books: {
-    key: "books",
-    href: "/space/books",
-    label: "Books",
-    icon: BookOpen,
   },
   notebooks: {
     key: "notebooks",
@@ -199,7 +170,7 @@ export function ActivityBody({
 }) {
   const { t } = useTranslation();
   const { tools, knowledgeBases, space, attachments, artifacts } = activity;
-  const { sessions, notebooks, books } = useResolvedTitles(activity, open);
+  const { sessions, notebooks } = useResolvedTitles(activity, open);
 
   const spaceSubsections: ReactNode[] = [];
   if (space.historySessionIds.length > 0) {
@@ -216,26 +187,6 @@ export function ActivityBody({
             subtitle={id.slice(0, 8)}
           />
         ))}
-      </SpaceSubsection>,
-    );
-  }
-  if (space.bookIds.length > 0) {
-    spaceSubsections.push(
-      <SpaceSubsection
-        key="books"
-        category={SPACE_CATEGORIES.books}
-        count={space.bookIds.length}
-      >
-        {space.bookIds.map((id) => {
-          const pages = space.bookPages.get(id)?.length ?? 0;
-          return (
-            <SpaceItemRow
-              key={id}
-              title={books.get(id) ?? id}
-              subtitle={t("{{n}} page(s)", { n: pages })}
-            />
-          );
-        })}
       </SpaceSubsection>,
     );
   }

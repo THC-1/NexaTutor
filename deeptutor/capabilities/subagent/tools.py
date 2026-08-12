@@ -47,14 +47,11 @@ class ConsultSubagentTool(BaseTool):
             name="consult_subagent",
             description=(
                 "Ask the connected external agent (a local agent CLI on the user's "
-                "machine — Claude Code, Codex, Gemini CLI, Kimi CLI, opencode, MiMo "
-                "Code — or one of their partners) a focused question and get its "
-                "answer. A local agent runs on the user's machine with access to their "
-                "files and tools; a partner answers with its own persona, library and "
-                "skills. Either way its full step-by-step run is shown to the user "
+                "machine — Claude Code, Codex, Gemini CLI, Kimi CLI, opencode, or MiMo "
+                "Code) a focused question and get its answer. The agent runs on the "
+                "user's machine with access to their files and tools; its full run is shown "
                 "live. Use it to delegate work it is better placed to do — inspecting "
-                "a codebase, running commands, reproducing a bug, or drawing on a "
-                "partner's dedicated knowledge. You may consult it more than once to "
+                "a codebase, running commands, or reproducing a bug. You may consult it more than once to "
                 "drill down, but you have a limited number of consults this turn (the "
                 "result tells you how many remain). When you have enough, stop calling "
                 "this tool and answer the user yourself in your own voice — never "
@@ -149,7 +146,6 @@ class ConsultSubagentTool(BaseTool):
                 session_id=state.get("session_id"),
                 config=spec.get("config"),
                 images=image_paths or None,
-                partner_id=spec.get("partner_id") or None,
             )
         except Exception as exc:  # pragma: no cover - defensive: surface, don't crash the turn
             logger.warning("consult_subagent failed: %s", exc, exc_info=True)

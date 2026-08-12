@@ -8,9 +8,11 @@
 
 ## 项目状态
 
-NexaTutor 正在从 DeepTutor 渐进裁剪为单用户、本地优先的 AI 学习工作台。前端品牌已经切换，但 Python 分发名、内部 namespace、兼容 CLI、Docker / Compose 标识目前仍是 `deeptutor` / `DeepTutor`。
+NexaTutor 已完成 P11/P12 第一层：分发名、正式 CLI、Docker / Compose 和公开品牌使用 `nexatutor` / `NexaTutor`。内部 Python namespace 与持久化兼容标识继续保留 `deeptutor`。
 
-当前已经完成的 Remove 步骤只有：FastAPI 生命周期不再自动启动或停止 Partner / IM Runtime。Partner Router、CLI、Tools、UI、实现和依赖仍存在，不能在文档或代码中冒充已经完整删除。
+P0、Partners、P3、P4、P5、P6、P7 与 P8 已完成。Partner / IM、MCP、CLI Apps、在线 Skill Hub、账号 Auth / Admin / JWT / Cookie / Grants / Multi-user、PocketBase、公网部署、Book、Videogen、Math Animator / Manim、GeoGebra、Cron、Built-in GitHub / Brainstorm / Reason / Exec，以及非标准 RAG 和非目标 LLM Provider 的注册、调用、UI、后端实现和专属依赖均已删除，旧配置不能重新启用专用 Adapter。知识库只保留 LlamaIndex → FAISS + BM25 Hybrid → Citation 标准路径。LLM 产品入口只保留 OpenAI、Anthropic、Gemini、DeepSeek、OpenAI-compatible、Anthropic-compatible；OpenAI Codex OAuth 是独立 Core 登录能力，继续保留。Embedding、Search 与本地 Subagent Provider 是独立 Registry，不随 LLM 同名项删除。普通 Settings 响应不返回 Provider 明文 API Key，密钥使用 write-only 三态更新。运行边界已收敛为 `LocalUserContext → LocalWorkspace → data/user`，服务和容器端口只绑定 loopback；My Agents / Subagents 与 Sandbox Runner 明确保留。下一步从 P9 Memory UI 精简开始。
+
+P9/P10、P11 与 P12 第一层已完成。Python 顶级 namespace 改名延后单独决策；不得机械替换内部 import 或自动迁移用户数据、浏览器持久化键。
 
 所有施工以 `NEXATUTOR_SLIMMING_PLAN_REVISED新版.md` 为唯一执行基准。
 
@@ -40,13 +42,14 @@ chat, deep_solve, deep_question, deep_research, visualize, math_animator,
 mastery_path
 ```
 
-Tool 共 43 个，Provider Spec 共 36 个，RAG Provider 共 6 个。完整清单见 `NEXATUTOR_RUNTIME_BASELINE.md`。这些是裁剪前基线，不是最终 NexaTutor 范围。
+裁剪前 Tool 共 43 个、LLM Provider Spec 共 36 个、RAG Provider 共 6 个；当前 LLM Provider Spec 为 7 个（六类产品入口加 `openai_codex`）。完整裁剪前清单见 `NEXATUTOR_RUNTIME_BASELINE.md`，不能把该历史基线当作当前运行时范围。
 
 需要持续保护的 Core：
 
 - Chat、Solve、Research、Quiz / Question Pipeline、Mastery Path。
 - Mermaid、SVG、Chart.js、HTML 轻量可视化。
 - 会话、文件上传、知识库、Notebook、Question Bank、Memory。
+- My Agents / Subagents 与用户显式配置的本地 Agent Provider。
 - CLI、WebSocket、模型配置、RAG、引用、使用量与成本统计。
 
 ## 固定裁剪流程
@@ -68,7 +71,7 @@ Tool 共 43 个，Provider Spec 共 36 个，RAG Provider 共 6 个。完整清�
 
 ## 工作区边界
 
-- `web/.next-deeptutor/` 有大量被 Git 跟踪的历史构建产物变化。
+- `web/.next-deeptutor/` 已停止 Git 跟踪并由 `.gitignore` 忽略；本地历史生成物仍可能存在。
 - 禁止执行 `git add -A`。
 - 状态、Diff 和暂存必须显式排除 `web/.next-deeptutor/**`。
 - 前端验证使用被忽略的 `web/.next`。
@@ -77,20 +80,20 @@ Tool 共 43 个，Provider Spec 共 36 个，RAG Provider 共 6 个。完整清�
 
 ## 常用命令
 
-当前兼容 CLI 仍为 `deeptutor`：
+正式 CLI 为 `nexatutor`；`deeptutor` 是临时兼容转发：
 
 ```powershell
-deeptutor init
-deeptutor start
-deeptutor start --dev
-deeptutor serve --port 8001
-deeptutor chat
-deeptutor run chat "解释傅里叶变换"
-deeptutor kb list
-deeptutor memory show
+nexatutor init
+nexatutor start
+nexatutor start --dev
+nexatutor serve --port 8001
+nexatutor chat
+nexatutor run chat "解释傅里叶变换"
+nexatutor kb list
+nexatutor memory show
 ```
 
-`partner`、`plugin`、`provider`、`book` 等迁移期命令仍可能存在，但不属于最终 Core。
+`partner`、`plugin` 与 `book` 顶层命令已删除；`skill` / `skills` 只保留本地 `list`、`remove`。`provider` 等迁移期命令仍可能存在，但不属于最终 Core。
 
 ## 关键文件
 
@@ -134,6 +137,6 @@ deeptutor memory show
 
 ## 依赖层
 
-当前 `pyproject.toml` 仍包含 `cli`、`server`、`partners`、`matrix`、`matrix-e2e`、`math-animator`、`graphrag`、`rag-lightrag`、`dev` 和 `all` 等 extra。依赖只能在运行时、测试、构建、CLI、动态 import 和 optional extra 引用全部消失后删除。
+当前 `pyproject.toml` 已移除 `partners`、`matrix`、`matrix-e2e`、`math-animator`、`graphrag`、`rag-lightrag` extra 与对应专用依赖，仍包含 `cli`、`server`、`dev` 和 `all` 等迁移期 extra。依赖只能在运行时、测试、构建、CLI、动态 import 和 optional extra 引用全部消失后删除。
 
 默认开发安装使用 `pip install -e ".[dev]"`，不要使用会拉入全部待裁剪能力的 `.[all]`。

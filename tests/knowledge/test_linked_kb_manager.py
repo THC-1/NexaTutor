@@ -80,7 +80,7 @@ def test_linked_entry_survives_orphan_prune(tmp_path: Path) -> None:
     assert "Linked" in manager.list_knowledge_bases()
 
 
-def test_get_metadata_surfaces_external_path_and_provider(tmp_path: Path) -> None:
+def test_get_metadata_normalizes_removed_linked_provider(tmp_path: Path) -> None:
     ext = _external_index(tmp_path)
     manager = KnowledgeBaseManager(base_dir=str(tmp_path / "kbs"))
     manager.register_linked_kb("Linked", str(ext), "graphrag")
@@ -88,7 +88,7 @@ def test_get_metadata_surfaces_external_path_and_provider(tmp_path: Path) -> Non
     meta = manager.get_metadata("Linked")
     assert meta["type"] == "linked"
     assert Path(meta["external_path"]) == ext.resolve()
-    assert meta["rag_provider"] == "graphrag"
+    assert meta["rag_provider"] == "llamaindex"
 
 
 def test_reconcile_skips_linked_entry(tmp_path: Path) -> None:

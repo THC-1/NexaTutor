@@ -41,7 +41,6 @@ import type {
 import { apiFetch, apiUrl } from "@/lib/api";
 import { docIconFor } from "@/lib/doc-attachments";
 import { useVoiceAutoplay } from "@/hooks/useVoiceAutoplay";
-import { extractMathAnimatorResult } from "@/lib/math-animator-types";
 import {
   extractQuizQuestions,
   extractQuizTurnId,
@@ -50,7 +49,6 @@ import {
 import { extractVisualizeResult } from "@/lib/visualize-types";
 import type { StreamEvent } from "@/lib/unified-ws";
 import { hasVisibleMarkdownContent } from "@/lib/markdown-display";
-import type { SelectedBookReference } from "@/lib/book-references";
 import { buildVisiblePath, type SiblingInfo } from "@/lib/message-branches";
 import { turnAnchorKey } from "@/lib/chat-outline";
 import { shouldSubmitOnEnter } from "@/lib/composer-keyboard";
@@ -68,10 +66,6 @@ import { AssistantActivity } from "./TracePanels";
 import { agentGlyph } from "@/components/agents/agent-icons";
 import { useConnectedAgentKinds } from "@/hooks/useConnectedAgentKinds";
 
-const MathAnimatorViewer = dynamic(
-  () => import("@/components/math-animator/MathAnimatorViewer"),
-  { ssr: false },
-);
 const QuizViewer = dynamic(() => import("@/components/quiz/QuizViewer"), {
   ssr: false,
 });
@@ -110,7 +104,6 @@ export function getModeBadgeLabel(capability?: string | null): string {
   if (capability === "deep_solve") return "Deep Solve";
   if (capability === "deep_question") return "Quiz Generation";
   if (capability === "deep_research") return "Deep Research";
-  if (capability === "math_animator") return "Math Animator";
   if (capability === "visualize") return "Visualize";
   if (capability === "mastery_path") return "Mastery Path";
   return capability;
@@ -359,11 +352,6 @@ const AssistantMessage = memo(function AssistantMessage({
     return extractQuizTurnId(msg.events);
   }, [msg.capability, msg.events]);
 
-  const mathAnimatorResult = useMemo(() => {
-    if (msg.capability !== "math_animator" || !resultEvent) return null;
-    return extractMathAnimatorResult(resultEvent.metadata);
-  }, [msg.capability, resultEvent]);
-
   const visualizeResult = useMemo(() => {
     if (msg.capability !== "visualize" || !resultEvent) return null;
     return extractVisualizeResult(resultEvent.metadata);
@@ -381,11 +369,10 @@ const AssistantMessage = memo(function AssistantMessage({
   // before the ask_user call renders above the card; text emitted by
   // the resumed iteration renders below it. Only walked when this
   // message will actually render through the default branch (the
-  // research / quiz / animator / visualize branches have their own
+  // research / quiz / visualize branches have their own
   // layout and pin the card elsewhere).
   const useInlineAskUserSegments =
     !outlinePreview &&
-    !mathAnimatorResult &&
     !visualizeResult &&
     !(quizQuestions && quizQuestions.length > 0);
   const messageSegments = useMemo(
@@ -454,8 +441,6 @@ const AssistantMessage = memo(function AssistantMessage({
             />
           ) : null}
         </>
-      ) : mathAnimatorResult ? (
-        <MathAnimatorViewer result={mathAnimatorResult} />
       ) : visualizeResult ? (
         <VisualizationViewer result={visualizeResult} />
       ) : quizQuestions && quizQuestions.length > 0 ? (
@@ -962,14 +947,6 @@ const UserMessage = memo(function UserMessage({
         label: name,
       };
     }),
-    ...(snap?.bookReferences ?? []).map(
-      (ref): ContextTreeItem => ({
-        key: `book-${ref.book_id}`,
-        icon: BookOpen,
-        kind: t("Book"),
-        label: `${ref.page_ids.length} ${t("chapters")}`,
-      }),
-    ),
     ...(snap?.notebookReferences ?? []).map(
       (ref): ContextTreeItem => ({
         key: `nb-${ref.notebook_id}`,

@@ -55,16 +55,15 @@ class ExecRequest:
 
     Two spellings of the same request, and both are always present:
 
-    ``command``  a shell string — what a model-authored ``exec`` call is.
+    ``command``  a diagnostic shell rendering of argv for logs/transport.
     ``argv``     an argument vector, empty unless the caller built one.
 
     When ``argv`` is set a backend runs it **without a shell**, which is how a
     caller that assembles arguments from model output (a CLI app invocation)
     avoids shell metacharacters mattering at all. ``command`` still holds the
-    equivalent shell string, produced by :meth:`of_argv` via ``shlex.join``, so a
-    runner sidecar built before ``argv`` existed keeps working — an older image is
-    the normal state of affairs during a rolling deploy, and a request it does not
-    fully understand must degrade to a correct execution rather than a wrong one.
+    equivalent string, produced by :meth:`of_argv` via ``shlex.join``. The runner
+    advertises ``argv-v1`` and fails closed when it is unavailable; this string is
+    never a compatibility fallback to a shell.
     """
 
     command: str

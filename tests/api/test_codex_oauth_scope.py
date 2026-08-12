@@ -1,15 +1,4 @@
-"""Who may drive the Codex OAuth lifecycle (issue #781).
-
-These five endpoints act on the *caller's own* credentials — the store, the
-model catalog, and the callback route are all resolved from owner scope — so
-the administrator gate that used to sit on them was what left ordinary users
-unable to use Codex at all: an owner-bound profile is never grantable, and
-they could not sign in for themselves either.
-
-What replaces it is narrower, not absent: a partner is refused. A partner is
-a synthetic user whose owner is a real account, so admitting one would mean
-acting on that person's login — including signing them out.
-"""
+"""The local workspace may drive the retained Codex OAuth lifecycle."""
 
 from __future__ import annotations
 
@@ -20,8 +9,6 @@ from fastapi.testclient import TestClient
 import pytest
 
 from deeptutor.api.routers import settings as settings_router
-from deeptutor.multi_user.models import CurrentUser, UserScope
-from deeptutor.services.partners.scope import PARTNER_USER_PREFIX
 
 CODEX_ROUTES = [
     ("post", "/api/v1/settings/providers/openai-codex/oauth/start"),
@@ -33,7 +20,7 @@ CODEX_ROUTES = [
 
 
 class _Service:
-    """Stand-in for the per-owner ``CodexOAuthService``."""
+    """Stand-in for the single local ``CodexOAuthService``."""
 
     def __init__(self) -> None:
         self.calls: list[str] = []
@@ -59,47 +46,21 @@ class _Service:
         return {"connection": "connected"}
 
 
-def _user(uid: str, *, role: str, root) -> CurrentUser:
-    return CurrentUser(
-        id=uid,
-        username=uid,
-        role=role,
-        scope=UserScope(kind="user", user_id=uid, root=root),
-    )
-
-
 @pytest.fixture
-def client(tmp_path, monkeypatch) -> tuple[TestClient, _Service, dict[str, CurrentUser]]:
+def client(monkeypatch) -> tuple[TestClient, _Service]:
     service = _Service()
     monkeypatch.setattr(settings_router, "get_codex_oauth_service", lambda: service)
-    current: dict[str, CurrentUser] = {
-        "user": _user("u_alice", role="user", root=tmp_path / "alice")
-    }
-    monkeypatch.setattr(settings_router, "get_current_user", lambda: current["user"])
 
     app = FastAPI()
     app.include_router(settings_router.router, prefix="/api/v1/settings")
-    return TestClient(app), service, current
+    return TestClient(app), service
 
 
 @pytest.mark.parametrize(("method", "path"), CODEX_ROUTES)
-def test_an_ordinary_user_drives_their_own_codex_lifecycle(client, method, path) -> None:
-    test_client, service, _current = client
+def test_local_workspace_drives_codex_lifecycle(client, method, path) -> None:
+    test_client, service = client
 
     response = getattr(test_client, method)(path)
 
     assert response.status_code == 200
-    assert service.calls, "the request must reach the owner-scoped service"
-
-
-@pytest.mark.parametrize(("method", "path"), CODEX_ROUTES)
-def test_a_partner_is_refused(client, tmp_path, method, path) -> None:
-    """A partner inherits its owner's login at call time; letting it in here
-    would let it sign that person out."""
-    test_client, service, current = client
-    current["user"] = _user(f"{PARTNER_USER_PREFIX}ada", role="user", root=tmp_path / "partner-ada")
-
-    response = getattr(test_client, method)(path)
-
-    assert response.status_code == 403
-    assert service.calls == []
+    assert service.calls, "the request must reach the local Codex service"

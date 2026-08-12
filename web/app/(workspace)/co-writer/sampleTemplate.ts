@@ -57,7 +57,7 @@ The <abbr title="Large Language Model">LLM</abbr> layer powers NexaTutor while t
 
 #### Inline code
 
-\`deeptutor chat --once "Summarize this section"\`
+\`nexatutor chat --once "Summarize this section"\`
 
 #### Code Blocks (Indented style)
 
@@ -88,7 +88,7 @@ ${FENCE}json
 {
   "app_name": "NexaTutor",
   "default_capability": "chat",
-  "enabled_tools": ["rag", "web_search", "code_execution", "reason"],
+  "enabled_tools": ["rag", "web_search", "code_execution"],
   "ui": {
     "co_writer_template": true
   }

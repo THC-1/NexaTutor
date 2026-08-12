@@ -198,7 +198,7 @@ def test_ready_status_unaffected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert info["status"] == "ready"
 
 
-def test_ready_lightrag_with_failed_doc_status_reports_error(
+def test_removed_lightrag_index_requires_standard_reindex(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _patch_active_embedding(monkeypatch)
@@ -236,12 +236,11 @@ def test_ready_lightrag_with_failed_doc_status_reports_error(
     }
     manager._save_config()
 
-    info = KnowledgeBaseManager(base_dir=str(tmp_path)).get_info("kb-lightrag")
-    assert info["status"] == "error"
-    assert info["progress"]["stage"] == "error"
-    assert "bad.docx" in info["progress"]["error"]
+    reloaded = KnowledgeBaseManager(base_dir=str(tmp_path))
+    info = reloaded.get_info("kb-lightrag")
+    assert info["status"] == "needs_reindex"
     assert info["statistics"]["rag_initialized"] is False
-    assert info["statistics"]["index_versions"][0]["ready"] is False
+    assert reloaded.config["knowledge_bases"]["kb-lightrag"]["rag_provider"] == "llamaindex"
 
 
 def test_needs_reindex_takes_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

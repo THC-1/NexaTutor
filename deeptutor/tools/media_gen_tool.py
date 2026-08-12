@@ -1,10 +1,10 @@
-"""Image- and video-generation chat tools.
+"""Image-generation chat tool.
 
-Thin BaseTool front-ends over the ``imagegen`` / ``videogen`` services. Each
-call generates media via the active catalog model, writes the bytes into the
+Thin BaseTool front-end over the ``imagegen`` service. Each call generates
+media via the active catalog model, writes the bytes into the
 turn's public workspace, and returns the files as artifacts — reusing the exact
 same ``collect_public_artifacts`` convention as the exec / code_execution tools,
-so generated images/videos surface in chat as download cards (and the model can
+so generated images surface in chat as download cards (and the model can
 linkify them by writing the filename verbatim).
 
 Mounting & gating (set by the chat pipeline, not here):
@@ -35,9 +35,6 @@ _EXT_BY_CONTENT_TYPE = {
     "image/jpeg": "jpg",
     "image/webp": "webp",
     "image/gif": "gif",
-    "video/mp4": "mp4",
-    "video/webm": "webm",
-    "video/quicktime": "mov",
 }
 
 
@@ -180,82 +177,4 @@ class ImagegenTool(BaseTool):
         )
 
 
-class VideogenTool(BaseTool):
-    """Generate a video from a text prompt via the configured videogen model."""
-
-    def get_definition(self) -> ToolDefinition:
-        return ToolDefinition(
-            name="videogen",
-            description=(
-                "Generate a short video from a text description using the configured "
-                "video-generation model. Write a vivid, self-contained `prompt` "
-                "describing the scene, motion, and style. Rendering is slow (it may "
-                "take a minute or more). The video is saved and shown to the user "
-                "automatically — after calling, refer to it by its exact filename."
-            ),
-            parameters=[
-                ToolParameter(
-                    name="prompt",
-                    type="string",
-                    description="A detailed description of the video to generate.",
-                ),
-                ToolParameter(
-                    name="aspect_ratio",
-                    type="string",
-                    description="Optional aspect ratio like '16:9' or '9:16'. Omit for the default.",
-                    required=False,
-                ),
-                ToolParameter(
-                    name="duration",
-                    type="string",
-                    description="Optional duration in seconds (e.g. '5'). Omit for the default.",
-                    required=False,
-                ),
-            ],
-        )
-
-    async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.services.videogen import GenerationProviderError, generate_video
-
-        prompt = str(kwargs.get("prompt") or "").strip()
-        if not prompt:
-            return ToolResult(content="videogen requires a non-empty 'prompt'.", success=False)
-        aspect_ratio = str(kwargs.get("aspect_ratio") or "").strip() or None
-        duration = str(kwargs.get("duration") or "").strip() or None
-
-        event_sink = kwargs.get("event_sink")
-
-        async def _progress(message: str) -> None:
-            if event_sink is None:
-                return
-            try:
-                await event_sink("tool_log", message)
-            except Exception:  # progress is best-effort; never fail the render
-                logger.debug("videogen progress emit failed", exc_info=True)
-
-        try:
-            video, content_type = await generate_video(
-                prompt,
-                aspect_ratio=aspect_ratio,
-                duration=duration,
-                progress=_progress,
-            )
-        except ValueError as exc:  # not configured
-            return ToolResult(content=str(exc), success=False)
-        except GenerationProviderError as exc:
-            logger.warning("videogen failed: %s", exc)
-            return ToolResult(content=f"Video generation failed: {exc}", success=False)
-
-        run_dir = _run_dir(kwargs.get("_workspace_dir"), "videogen")
-        artifacts = _write_media(
-            run_dir, [(video, content_type)], stem=_slug(prompt, "video"), default_ext="mp4"
-        )
-        return _artifact_result(
-            artifacts,
-            empty_message="Video generation produced no saved file.",
-            prompt=prompt,
-            kind="video",
-        )
-
-
-__all__ = ["ImagegenTool", "VideogenTool"]
+__all__ = ["ImagegenTool"]

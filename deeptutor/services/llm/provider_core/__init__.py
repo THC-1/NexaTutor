@@ -9,16 +9,12 @@ from .base import GenerationSettings, LLMProvider, LLMResponse, ToolCallRequest
 
 if TYPE_CHECKING:
     from .anthropic_provider import AnthropicProvider
-    from .azure_openai_provider import AzureOpenAIProvider
-    from .github_copilot_provider import GitHubCopilotProvider
     from .openai_codex_provider import OpenAICodexProvider
     from .openai_compat_provider import OpenAICompatProvider
 
 __all__ = [
     "AnthropicProvider",
-    "AzureOpenAIProvider",
     "GenerationSettings",
-    "GitHubCopilotProvider",
     "LLMProvider",
     "LLMResponse",
     "OpenAICodexProvider",
@@ -29,8 +25,6 @@ __all__ = [
 
 _LAZY_TYPES = {
     "AnthropicProvider": ("anthropic_provider", "AnthropicProvider"),
-    "AzureOpenAIProvider": ("azure_openai_provider", "AzureOpenAIProvider"),
-    "GitHubCopilotProvider": ("github_copilot_provider", "GitHubCopilotProvider"),
     "OpenAICodexProvider": ("openai_codex_provider", "OpenAICodexProvider"),
     "OpenAICompatProvider": ("openai_compat_provider", "OpenAICompatProvider"),
 }

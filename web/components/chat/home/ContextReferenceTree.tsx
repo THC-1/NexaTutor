@@ -14,7 +14,7 @@ export interface ContextTreeItem {
   // A lucide icon, or any glyph with the same call signature (brand SVG marks
   // are cast to this at the call site).
   icon: LucideIcon;
-  /** Type prefix ("Book", "Notebook", ...), already translated. */
+  /** Type prefix ("Notebook", "Knowledge", ...), already translated. */
   kind: string;
   /** Item title; truncates. */
   label: string;

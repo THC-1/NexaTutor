@@ -80,15 +80,11 @@ DEFAULT_AGENTS_SETTINGS = {
             "responding": {"max_tokens": 8000},
         },
     },
-    "tools": {
-        "brainstorm": {"temperature": 0.8, "max_tokens": 2048},
-    },
     "services": {
         "personalization": {"temperature": 0.5, "max_tokens": 8192},
     },
     "plugins": {
         "vision_solver": {"temperature": 0.3, "max_tokens": 12000},
-        "math_animator": {"temperature": 0.4, "max_tokens": 12000},
     },
 }
 
@@ -128,13 +124,11 @@ def init_user_directories(project_root: Path | None = None) -> None:
         ├── notebook/
         ├── memory/
         ├── co-writer/
-        ├── book/
         └── chat/
             ├── chat/
             ├── deep_solve/
             ├── deep_question/
             ├── deep_research/
-            ├── math_animator/
             └── _detached_code_execution/
 
     Args:
@@ -184,11 +178,11 @@ def _seed_default_personas() -> None:
     Best-effort — never blocks startup.
     """
     try:
-        from deeptutor.multi_user.paths import get_admin_path_service
         from deeptutor.services.persona.service import PersonaService
+        from deeptutor.services.path_service import get_path_service
 
-        admin_personas = get_admin_path_service().get_workspace_dir() / "personas"
-        seeded = PersonaService(root=admin_personas).seed_presets()
+        local_personas = get_path_service().get_workspace_dir() / "personas"
+        seeded = PersonaService(root=local_personas).seed_presets()
         if seeded:
             _get_setup_logger().info(f"Seeded default personas: {', '.join(seeded)}")
     except Exception as e:

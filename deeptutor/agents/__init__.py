@@ -8,7 +8,7 @@ This module provides a unified BaseAgent class and module-specific agents:
   (Deep Solve also runs here, via the solve loop capability)
 
 Note: ``co_writer`` and ``book`` are independent top-level modules under
-``deeptutor/`` (e.g. ``deeptutor.co_writer``, ``deeptutor.book``). They
+``deeptutor/`` (for example ``deeptutor.co_writer``). They
 still inherit from :class:`BaseAgent` defined here but are not part of
 the ``deeptutor.agents`` package.
 

@@ -149,49 +149,12 @@ def test_build_openai_client_routes_oauth_backend_through_adapter(monkeypatch) -
     assert captured["default_model"] == "openai-codex/gpt-5.5"
 
 
-def test_build_openai_client_routes_github_copilot_backend_through_adapter(monkeypatch) -> None:
-    captured = {}
-
-    class FakeProvider:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-
-    monkeypatch.setattr(
-        "deeptutor.services.llm.provider_core.GitHubCopilotProvider",
-        FakeProvider,
-    )
-
-    client = build_openai_client(
-        LLMClientConfig(
-            binding="github_copilot",
-            model="github-copilot/gpt-4.1",
-            api_key=None,
-            base_url="https://api.githubcopilot.com",
-        )
-    )
-
-    assert isinstance(client, _ProviderOpenAIAdapter)
-    assert captured["default_model"] == "github-copilot/gpt-4.1"
-
-
 def test_anthropic_backend_can_use_native_tool_calling() -> None:
     assert can_use_native_tool_calling(binding="custom_anthropic", model="claude-test") is True
-    assert can_use_native_tool_calling(binding="minimax_anthropic", model="MiniMax-M3") is True
 
 
 def test_custom_qwen_can_use_native_tool_calling() -> None:
     assert can_use_native_tool_calling(binding="custom", model="qwen3.6-plus") is True
-    assert can_use_native_tool_calling(binding="dashscope", model="qwen-plus") is True
-
-
-def test_siliconflow_deepseek_can_use_native_tool_calling() -> None:
-    assert (
-        can_use_native_tool_calling(
-            binding="siliconflow",
-            model="deepseek-ai/DeepSeek-V4-Pro",
-        )
-        is True
-    )
 
 
 def test_registered_cloud_openai_compat_providers_enable_native_tools() -> None:
@@ -200,20 +163,7 @@ def test_registered_cloud_openai_compat_providers_enable_native_tools() -> None:
     # part of the OpenAI-compatible API contract. Guards against silently
     # disabling native tools when a new cloud provider joins the registry (the
     # gap that affected SiliconFlow before #584).
-    for binding in (
-        "gemini",
-        "zhipu",
-        "qianfan",
-        "stepfun",
-        "xiaomi_mimo",
-        "nvidia_nim",
-        "aihubmix",
-        "atlascloud",
-        "edenai",
-        "novita",
-        "volcengine_coding_plan",
-        "byteplus_coding_plan",
-    ):
+    for binding in ("openai", "gemini", "deepseek", "custom"):
         assert can_use_native_tool_calling(binding=binding, model=None) is True, binding
 
 
@@ -225,21 +175,6 @@ def test_openai_codex_backend_can_use_native_tool_calling() -> None:
         )
         is True
     )
-
-
-def test_local_and_github_copilot_backends_stay_opted_out_of_native_tools() -> None:
-    # Local OpenAI-compatible servers have model-dependent, unreliable tool support.
-    # GitHub Copilot remains opted out until its native tool path is validated.
-    for binding in (
-        "ollama",
-        "vllm",
-        "lm_studio",
-        "llama_cpp",
-        "lemonade",
-        "ovms",
-        "github_copilot",
-    ):
-        assert can_use_native_tool_calling(binding=binding, model=None) is False, binding
 
 
 def test_unknown_binding_does_not_enable_native_tools() -> None:

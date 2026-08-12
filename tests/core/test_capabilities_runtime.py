@@ -72,14 +72,13 @@ def test_builtin_capability_registry_covers_documented_capabilities() -> None:
         "deep_solve",
         "deep_question",
         "deep_research",
-        "math_animator",
         "visualize",
         "mastery_path",
     }
 
 
 @pytest.mark.asyncio
-async def test_chat_capability_streams_content_and_geogebra_context(
+async def test_chat_capability_streams_content_and_tool_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, Any] = {}
@@ -90,12 +89,12 @@ async def test_chat_capability_streams_content_and_geogebra_context(
 
         async def run(self, context: UnifiedContext, stream: StreamBus) -> None:
             captured["process"] = {
-                "message": f"{context.user_message}\nGGB commands",
+                "message": context.user_message,
                 "enabled_tools": list(context.enabled_tools or []),
             }
             await stream.tool_call(
-                "geogebra_analysis",
-                {"image_name": "img.png"},
+                "code_execution",
+                {"code": "print(1)"},
                 source="chat",
                 stage="acting",
             )
@@ -112,8 +111,8 @@ async def test_chat_capability_streams_content_and_geogebra_context(
     monkeypatch.setattr("deeptutor.agents.chat.capability.AgenticChatPipeline", FakePipeline)
 
     context = UnifiedContext(
-        user_message="analyze triangle",
-        enabled_tools=["rag", "web_search", "geogebra_analysis"],
+        user_message="analyze the problem",
+        enabled_tools=["rag", "web_search", "code_execution"],
         knowledge_bases=["demo-kb"],
         language="en",
         attachments=[Attachment(type="image", base64="ZmFrZQ==", filename="img.png")],
@@ -128,7 +127,7 @@ async def test_chat_capability_streams_content_and_geogebra_context(
         event.type == StreamEventType.CONTENT and "assistant output" in event.content
         for event in events
     )
-    assert "GGB commands" in captured["process"]["message"]
+    assert captured["process"]["message"] == "analyze the problem"
 
 
 @pytest.mark.asyncio

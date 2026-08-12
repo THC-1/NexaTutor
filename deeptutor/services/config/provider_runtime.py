@@ -14,11 +14,11 @@ from deeptutor.services.provider_registry import (
     PROVIDERS,
     ProviderSpec,
     canonical_provider_name,
+    compatibility_provider_name,
     find_by_model,
     find_by_name,
     find_gateway,
 )
-from deeptutor.services.videogen.config import VideogenConfig
 from deeptutor.services.voice.config import (
     AUTH_API_KEY_HEADER,
     AUTH_BEARER,
@@ -327,14 +327,11 @@ def _canonical_voice_provider(name: str | None, table: dict[str, VoiceProviderSp
 
 @dataclass(frozen=True)
 class GenerationProviderSpec:
-    """Metadata for one image- or video-generation provider entry.
+    """Metadata for one image-generation provider entry.
 
     ``default_api_base`` is the provider's **API base** (e.g.
     ``https://api.openai.com/v1`` or ``https://ark.cn-beijing.volces.com/api/v3``);
-    the adapter appends the relative path (``images/generations`` or
-    ``contents/generations/tasks``). ``adapter`` selects the HTTP adapter:
-    imagegen providers share ``openai_compat``; videogen task-style providers
-    use ``async_task``.
+    the adapter appends its relative image-generation path.
     """
 
     label: str
@@ -387,23 +384,6 @@ IMAGEGEN_PROVIDERS: dict[str, GenerationProviderSpec] = {
         label="Chat Completions (Custom)",
         default_api_base="",
         adapter="chat_completions",
-        default_model="",
-    ),
-}
-
-# Video-generation providers. Text-to-video has no synchronous standard; these
-# all use the async-task adapter (submit → poll → download).
-VIDEOGEN_PROVIDERS: dict[str, GenerationProviderSpec] = {
-    "volcengine": GenerationProviderSpec(
-        label="Volcengine Ark (Seedance)",
-        default_api_base="https://ark.cn-beijing.volces.com/api/v3",
-        adapter="async_task",
-        default_model="doubao-seedance-1-0-pro-250528",
-    ),
-    "custom": GenerationProviderSpec(
-        label="Async Task (Custom)",
-        default_api_base="",
-        adapter="async_task",
         default_model="",
     ),
 }
@@ -542,21 +522,7 @@ def _load_catalog(catalog: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _with_personal_llm_profiles(catalog: dict[str, Any]) -> dict[str, Any]:
-    """Add the current owner's own owner-bound LLM profiles to *catalog*.
-
-    An ordinary user's Codex profile lives in their own catalog rather than
-    the shared one (see :mod:`deeptutor.multi_user.personal_models`), so
-    resolving a personal selection against the shared catalog alone would
-    fail to find the profile it names. Imported lazily and guarded: the LLM
-    layer must keep resolving in contexts where multi-user state is absent
-    (CLI, tests, background jobs).
-    """
-    try:
-        from deeptutor.multi_user.personal_models import merge_personal_llm_profiles
-
-        return merge_personal_llm_profiles(catalog)
-    except Exception:
-        return catalog
+    return catalog
 
 
 def _active_profile_and_model(
@@ -653,7 +619,7 @@ def resolve_llm_runtime_config(
         resolved_model = "gpt-4o-mini"
 
     binding_hint_raw = _as_str((profile or {}).get("binding"))
-    binding_hint = canonical_provider_name(binding_hint_raw)
+    binding_hint = compatibility_provider_name(binding_hint_raw)
 
     active_api_key = _as_str((profile or {}).get("api_key"))
     active_api_base = _as_str((profile or {}).get("base_url"))
@@ -1016,46 +982,6 @@ def resolve_imagegen_runtime_config(
     )
 
 
-def resolve_videogen_runtime_config(
-    catalog: dict[str, Any] | None = None,
-    *,
-    service: ModelCatalogService | None = None,
-) -> VideogenConfig:
-    """Resolve the active text-to-video config from the model catalog."""
-    catalog_service = service or get_model_catalog_service()
-    loaded = _load_catalog(catalog)
-    profile, model = _active_profile_and_model(loaded, catalog_service, "videogen")
-    resolved_model = _as_str((model or {}).get("model"))
-    if not resolved_model:
-        raise ValueError(
-            "No active video-generation model is configured. "
-            "Set it in Settings > Media Generation > Video Generation."
-        )
-
-    provider = _canonical_generation_provider(
-        _as_str((profile or {}).get("binding")), VIDEOGEN_PROVIDERS
-    )
-    spec = VIDEOGEN_PROVIDERS[provider]
-    api_base = _as_str((profile or {}).get("base_url")) or spec.default_api_base
-    api_key = _as_str((profile or {}).get("api_key"))
-    if not api_key and spec.is_local:
-        api_key = "sk-no-key-required"
-
-    return VideogenConfig(
-        model=resolved_model,
-        provider_name=provider,
-        adapter=spec.adapter,
-        auth_style=spec.auth_style,
-        api_key=api_key,
-        base_url=api_base,
-        api_version=_as_str((profile or {}).get("api_version")) or None,
-        extra_headers=_to_headers((profile or {}).get("extra_headers")),
-        aspect_ratio=_as_str((model or {}).get("aspect_ratio")),
-        duration=_as_str((model or {}).get("duration")),
-        resolution=_as_str((model or {}).get("resolution")),
-    )
-
-
 def _resolve_search_max_results(catalog: dict[str, Any], default: int = 5) -> int:
     profile = get_model_catalog_service().get_active_profile(catalog, "search") or {}
     raw = profile.get("max_results")
@@ -1185,9 +1111,7 @@ __all__ = [
     "resolve_stt_runtime_config",
     "GenerationProviderSpec",
     "IMAGEGEN_PROVIDERS",
-    "VIDEOGEN_PROVIDERS",
     "resolve_imagegen_runtime_config",
-    "resolve_videogen_runtime_config",
     "EMBEDDING_PROVIDER_ALIASES",
     "embedding_endpoint_validation_error",
     "normalize_embedding_endpoint_for_display",

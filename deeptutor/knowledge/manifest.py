@@ -35,8 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from deeptutor.knowledge.kb_types import (
-    IMA_KB_TYPE,
-    LIGHTRAG_SERVER_KB_TYPE,
+    LEGACY_INACTIVE_KB_TYPES,
     SUBAGENT_KB_TYPE,
     external_root_of,
 )
@@ -60,8 +59,7 @@ UNAVAILABLE_MISSING = "missing"
 # an API. Reporting them as "0 documents" would be a lie, so they are reported
 # as non-enumerable instead.
 _NON_DOCUMENT_KB_TYPES: dict[str, str] = {
-    LIGHTRAG_SERVER_KB_TYPE: UNAVAILABLE_REMOTE,
-    IMA_KB_TYPE: UNAVAILABLE_REMOTE,
+    **{kb_type: UNAVAILABLE_REMOTE for kb_type in LEGACY_INACTIVE_KB_TYPES},
     SUBAGENT_KB_TYPE: UNAVAILABLE_AGENT,
 }
 
@@ -143,8 +141,8 @@ def document_root(kb_dir: Path, entry: Mapping[str, Any]) -> Path | None:
     """Where ``entry``'s documents live on this machine, or ``None`` if nowhere.
 
     Ordinary indexed KBs own ``<kb_dir>/raw``. A connected KB that points at a
-    real folder (``linked``, ``obsidian``) is enumerated in place. A remote
-    LightRAG server and a connected subagent have no local document set at all.
+    real folder (``linked``, ``obsidian``) is enumerated in place. Removed remote
+    pointers and connected subagents have no local document set at all.
     """
     external = external_root_of(entry)
     if external:

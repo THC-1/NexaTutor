@@ -15,12 +15,10 @@ const LABELS: Record<string, string> = {
 };
 
 // Mirrors the reasoning-relevant half of PROVIDER_ALIASES in
-// deeptutor/services/provider_registry.py. A profile stored as "azure" or
+// deeptutor/services/provider_registry.py. A profile stored as
 // "openai-compatible" resolves to the same adapter as its canonical name, so
 // the lookup below has to see the canonical name or the selector vanishes.
 const PROVIDER_ALIASES: Record<string, string> = {
-  azure: "azure_openai",
-  azureopenai: "azure_openai",
   google: "gemini",
   google_genai: "gemini",
   claude: "anthropic",
@@ -28,21 +26,8 @@ const PROVIDER_ALIASES: Record<string, string> = {
   anthropic_compatible: "custom_anthropic",
 };
 
-const OPENAI_PROVIDERS = new Set([
-  "openai",
-  "azure_openai",
-  "openai_codex",
-  "github_copilot",
-]);
-const BINARY_THINKING_PROVIDERS = new Set([
-  "deepseek",
-  "volcengine",
-  "volcengine_coding_plan",
-  "byteplus",
-  "byteplus_coding_plan",
-  "dashscope",
-  "minimax",
-]);
+const OPENAI_PROVIDERS = new Set(["openai", "openai_codex"]);
+const BINARY_THINKING_PROVIDERS = new Set(["deepseek"]);
 
 function includesAny(value: string, patterns: string[]): boolean {
   return patterns.some((pattern) => value.includes(pattern));
@@ -130,9 +115,7 @@ export function reasoningEffortOptions(
   }
 
   if (BINARY_THINKING_PROVIDERS.has(provider) || provider === "custom") {
-    const supported =
-      provider === "minimax" ||
-      includesAny(modelName, [
+    const supported = includesAny(modelName, [
         "deepseek-reasoner",
         "deepseek-v4-pro",
         "qwen3",
@@ -144,10 +127,7 @@ export function reasoningEffortOptions(
       return options(["minimal", "high"], current);
     }
     if (BINARY_THINKING_PROVIDERS.has(provider)) {
-      // Deliberately no selector for the rest — VolcEngine/BytePlus thinking
-      // models are switched on by the backend from the spec's
-      // reasoning_model_patterns, so an explicit per-model choice here would
-      // duplicate a decision the registry already owns.
+      // A retained provider may intentionally support only a subset of models.
       return options([], current);
     }
   }

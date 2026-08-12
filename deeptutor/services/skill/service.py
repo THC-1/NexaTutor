@@ -66,9 +66,7 @@ _TAG_RE = re.compile(r"^[a-z0-9][a-z0-9\- _]{0,31}$")
 _DEFAULT_TAGS: tuple[str, ...] = ("style", "tool")
 _TAGS_FILE = ".tags.json"
 
-# Builtin skills shipped inside the package. Partners run on the chat agent
-# loop, so this is the single builtin set for both product chat and partner
-# workspaces (the old TutorBot-only skill set died with its engine).
+# Builtin skills shipped inside the package for the chat agent loop.
 BUILTIN_SKILLS_ROOT = Path(__file__).resolve().parents[2] / "skills" / "builtin"
 
 # Hard cap for read_skill payloads so a huge reference file cannot flood the

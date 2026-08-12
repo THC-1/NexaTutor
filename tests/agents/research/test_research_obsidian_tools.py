@@ -90,7 +90,7 @@ def _bind_kb(
             return {"name": str(ref), "type": "obsidian", "vault_path": obsidian_path}
         return None
 
-    monkeypatch.setattr("deeptutor.multi_user.knowledge_access.resolve_kb_metadata", fake)
+    monkeypatch.setattr("deeptutor.services.local_workspace.resolve_kb_metadata", fake)
     return calls
 
 
@@ -113,9 +113,6 @@ def _make_pipeline(
     monkeypatch.setattr("deeptutor.agents.research.pipeline.get_tool_registry", lambda: registry)
     monkeypatch.setattr("deeptutor.agents.research.pipeline.user_has_memory", lambda: False)
     monkeypatch.setattr("deeptutor.agents.research.pipeline.user_has_notebooks", lambda: False)
-    monkeypatch.setattr(
-        "deeptutor.agents.research.pipeline.exec_capability_available", lambda: False
-    )
     return ResearchPipeline(
         language="en",
         runtime_config={"queue": {"max_length": 5}},
@@ -190,31 +187,6 @@ def test_init_unresolvable_reference_stays_non_obsidian(monkeypatch: pytest.Monk
     )
     assert pipeline._is_obsidian_kb is False
     assert pipeline._vault_path is None
-
-
-def test_init_does_not_trigger_rag_usage_audit(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Construction resolves KB metadata as a pure read — ``log_usage`` for
-    ``rag_query`` must never fire (only ``resolve_for_rag`` audits)."""
-    from deeptutor.multi_user import audit
-
-    monkeypatch.setattr(
-        "deeptutor.multi_user.knowledge_access.resolve_kb_metadata",
-        lambda ref: {"name": ref, "type": "obsidian", "vault_path": "/v"},
-    )
-    audit_calls: list[tuple] = []
-
-    class _NoAudit:
-        def __call__(self, *args, **kwargs):
-            audit_calls.append((args, kwargs))
-
-    monkeypatch.setattr(audit, "log_usage", _NoAudit())
-    _make_pipeline(
-        monkeypatch,
-        registry=_ToolRegistry(ALL_TOOLS),
-        enabled_tools=[],
-        kb_name="vault",
-    )
-    assert audit_calls == []
 
 
 # ---------------------------------------------------------------------------

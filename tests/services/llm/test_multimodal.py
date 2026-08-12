@@ -86,16 +86,13 @@ def test_text_only_model_still_injects_images() -> None:
 # ---------------------------------------------------------------------------
 # Stage 1: URL→base64 format resolution (unchanged behaviour)
 # ---------------------------------------------------------------------------
-def test_moonshot_kimi_drops_external_url_only_attachment(caplog) -> None:
-    """Moonshot rejects URL-form image_url; an external url-only attachment
-    cannot be resolved locally and must be dropped (a *format* drop, not a
-    capability gate)."""
+def test_custom_endpoint_keeps_external_url_only_attachment(caplog) -> None:
     att = SimpleNamespace(type="image", url="https://example.com/cat.png", base64="")
     with caplog.at_level("WARNING"):
-        result = prepare_multimodal_messages(_msgs(), [att], binding="moonshot", model="kimi-k2.6")
-    assert result.url_images_dropped == 1
+        result = prepare_multimodal_messages(_msgs(), [att], binding="custom", model="kimi-k2.6")
+    assert result.url_images_dropped == 0
     parts = result.messages[0]["content"]
-    assert not any(p.get("type") == "image_url" for p in parts)
+    assert any(p.get("type") == "image_url" for p in parts)
 
 
 def test_moonshot_kimi_resolves_local_attachment_url(tmp_path, monkeypatch) -> None:
@@ -162,10 +159,7 @@ def test_should_degrade_only_for_non_vision_model_with_images() -> None:
     # Known vision-capable model → keep images, surface the real error.
     assert should_degrade_to_text("openai", "gpt-4o", msgs) is False
     # Qwen3.8-Max is multimodal even though its model ID has no ``-vl`` suffix.
-    assert should_degrade_to_text("dashscope", "qwen3.8-max", msgs) is False
-    # An allowlisted provider (VolcEngine) is trusted even for a model we have
-    # no per-model entry for.
-    assert should_degrade_to_text("volcengine", "doubao-1.5-vision-pro", msgs) is False
+    assert should_degrade_to_text("custom", "qwen3.8-max", msgs) is False
 
 
 def test_should_degrade_is_false_without_images() -> None:

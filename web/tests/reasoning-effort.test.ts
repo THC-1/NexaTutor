@@ -41,7 +41,7 @@ test("provider aliases resolve to the canonical adapter", () => {
     "medium",
     "high",
   ]);
-  assert.deepEqual(values("azure", "gpt-5.2"), [
+  assert.deepEqual(values("openai-compatible", "gpt-5.2"), [
     "",
     "minimal",
     "low",
@@ -90,7 +90,7 @@ test("known reasoning families get conservative provider-specific choices", () =
     "medium",
     "high",
   ]);
-  assert.deepEqual(values("dashscope", "qwen3-max"), ["", "minimal", "high"]);
+  assert.deepEqual(values("custom", "qwen3-max"), ["", "minimal", "high"]);
   assert.deepEqual(values("custom", "deepseek-reasoner"), [
     "",
     "minimal",

@@ -1,7 +1,7 @@
 /**
  * Minimal message/attachment shape the markdown exporter needs. Product chat's
- * `MessageItem` satisfies it structurally, and partner conversations map into
- * it too — so both surfaces share one serializer.
+ * `MessageItem` satisfies it structurally, allowing chat surfaces to share one
+ * serializer.
  */
 export interface ExportableAttachment {
   type?: string;

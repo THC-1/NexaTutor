@@ -2,17 +2,18 @@
 
 NexaTutor 是面向个人用户的本地 AI 学习工作台。应用前后端运行在用户自己的计算机上，通过云端 API 使用大语言模型、Embedding 和搜索服务；会话、资料、知识库、笔记、题库与学习记录默认保存在本地。
 
-> 当前状态：项目正在从 DeepTutor 渐进裁剪为 NexaTutor。前端品牌已经切换为 NexaTutor，但 Python 分发名、内部包名和兼容 CLI 目前仍为 `deeptutor`。本文只描述当前可以验证的状态，不把规划中的目标写成已经完成的功能。
+> 当前状态：P11 依赖清洗与 P12 第一层改名已完成。Python 分发名和正式 CLI 为 `nexatutor`；内部 Python namespace 继续保留 `deeptutor`，旧 CLI 暂作带迁移提示的兼容转发。
 
 ## 当前进度
 
 截至 2026-08-12：
 
 - 前端页面标题、侧栏、登录注册、状态文案和中英文界面文案已统一为 NexaTutor。
-- FastAPI 生命周期不再自动启动或停止 Partner / IM Runtime。
-- Partner API、CLI、Tools、UI、后端实现和依赖目前仍在仓库中，后续按“取消注册 → 取消调用 → 删除 UI → 删除实现 → 删除依赖”逐步处理。
-- Python 顶级包仍为 `deeptutor`，兼容命令仍为 `deeptutor`；正式改名安排在核心裁剪与回归验证完成后。
-- `web/.next-deeptutor/` 仍有历史上被 Git 跟踪的构建产物，任何改动不得将其混入源码提交。
+- Partners / IM 已完整裁剪：Router、CLI、Tools、Partner Subagent backend、调用点、UI、实现、依赖与正向测试均已删除。
+- MCP、CLI Apps、Deferred Tools / `load_tools`、在线 Skill Hub 与 Plugin Management UI / API / CLI 已完整裁剪，旧配置不能重新激活。
+- My Agents / Subagents 明确保留，后续只收敛到单用户、本地边界。
+- Python 顶级包仍为 `deeptutor`；是否迁移为 `nexatutor` 留待独立决策。
+- `web/.next-deeptutor/` 已停止 Git 跟踪并被忽略，本地残留生成物不得重新混入源码提交。
 
 详细施工顺序以 [NEXATUTOR_SLIMMING_PLAN_REVISED新版.md](NEXATUTOR_SLIMMING_PLAN_REVISED新版.md) 为唯一执行基准；基线信息见 [UPSTREAM_BASE.md](UPSTREAM_BASE.md) 和 [NEXATUTOR_RUNTIME_BASELINE.md](NEXATUTOR_RUNTIME_BASELINE.md)。
 
@@ -36,17 +37,21 @@ NexaTutor 的核心链路是：
 - PDF、DOCX、PPTX、XLSX、Markdown 和纯文本资料处理。
 - LlamaIndex、FAISS、BM25 与 Hybrid Retrieval 主知识库路径。
 - 会话、知识库、Notebook、Question Bank、Memory 和学习进度。
+- My Agents / Subagents 与用户显式配置的本地 CLI Agent 调用；后续只收敛其本地边界。
 - 本地 Web、FastAPI、WebSocket、Python SDK 与项目 CLI。
 
-以下能力正在按批次移除，当前不能仅凭本表判断代码已经删除：
+以下能力已移除：
 
 - Partners / IM Channels。
-- My Agents / Subagents 与外部 CLI Agent 调用。
 - MCP、CLI Apps、在线 Skill 市场与插件管理 UI。
+- PocketBase 外部 Sidecar 与复杂公网部署配置。
+
+以下能力仍在按批次移除，当前不能仅凭本表判断代码已经删除：
+
 - Auth / Admin / Multi-user / Grants。
 - Book、视频、Manim、GeoGebra、Cron、GitHub Tool 与通用 Exec。
 - GraphRAG、LightRAG、PageIndex、Tencent IMA 等非标准 RAG 路径。
-- 本地模型入口、专用 OAuth Provider 与复杂公网部署能力。
+- 本地模型入口与非目标专用 OAuth Provider。
 
 ## 环境要求
 
@@ -72,25 +77,25 @@ cd web
 npm install --legacy-peer-deps
 cd ..
 
-deeptutor init
-deeptutor start
+nexatutor init
+nexatutor start
 ```
 
-当前兼容 CLI 仍叫 `deeptutor`。启动器会自动寻找可用端口；默认后端端口通常为 `8001`，前端端口通常为 `3782`，端口被占用时可能自动变化。
+正式 CLI 为 `nexatutor`。旧 `deeptutor` 命令仅输出迁移提示并转发到同一实现。启动器会自动寻找可用端口。
 
 前端开发模式：
 
 ```powershell
-deeptutor start --dev
+nexatutor start --dev
 ```
 
 只启动 API：
 
 ```powershell
-deeptutor serve --port 8001
+nexatutor serve --port 8001
 ```
 
-容器运行仍使用 DeepTutor 兼容镜像与 service 名，详见[容器运行指南](CONTAINERIZATION.md#临时本地-codex-oauth-桥接)。公网部署、PocketBase 与 Sidecar 属于迁移期遗留能力，不是 NexaTutor 最终目标。
+容器 service、镜像目标和网络名已使用 NexaTutor 标识，并只发布到本机 loopback；详见[临时本地 Codex OAuth 桥接](CONTAINERIZATION.md#临时本地-codex-oauth-桥接)。Sandbox Runner 继续保留。
 
 ## 配置与本地数据
 
@@ -114,33 +119,34 @@ data/user/settings/
 当前可解析的顶层命令包括：
 
 ```text
-deeptutor init
-deeptutor start
-deeptutor serve
-deeptutor chat
-deeptutor run
-deeptutor kb
-deeptutor session
-deeptutor notebook
-deeptutor memory
-deeptutor config
+nexatutor init
+nexatutor start
+nexatutor serve
+nexatutor chat
+nexatutor run
+nexatutor kb
+nexatutor session
+nexatutor notebook
+nexatutor memory
+nexatutor config
+nexatutor skill
 ```
 
-迁移期仍可能显示 `partner`、`plugin`、`skill`、`provider`、`book` 等待裁剪命令。文档不再将这些入口描述为 NexaTutor Core。
+`partner`、`plugin` 与 `book` 已不存在；`skill` / `skills` 仅保留本地 `list`、`remove`。迁移期仍可能显示 `provider` 等待裁剪命令，文档不将这些入口描述为 NexaTutor Core。
 
 常用示例：
 
 ```powershell
-deeptutor run chat "解释傅里叶变换"
-deeptutor run deep_solve "求解 x^2 = 4"
-deeptutor run deep_research "整理一个主题的研究脉络" --config mode=report --config depth=2
-deeptutor kb list
-deeptutor session list
-deeptutor notebook list
-deeptutor memory show
+nexatutor run chat "解释傅里叶变换"
+nexatutor run deep_solve "求解 x^2 = 4"
+nexatutor run deep_research "整理一个主题的研究脉络" --config mode=report --config depth=2
+nexatutor kb list
+nexatutor session list
+nexatutor notebook list
+nexatutor memory show
 ```
 
-Provider 认证兼容入口：`openai-codex` 执行 OAuth 登录，`github-copilot` 只校验已有 Copilot 认证。该入口将在 Provider 收缩阶段单独处理。
+Provider 认证入口只保留 `openai-codex` OAuth 登录。
 
 ## 开发验证
 
@@ -168,8 +174,8 @@ npm run build
 
 - 默认面向个人、本地运行，服务最终应只监听 `127.0.0.1`。
 - API Key 不应进入前端日志、普通 API 响应或普通后端日志。
-- 通用 `exec` 将被删除；`code_execution` 只有在形成可靠限制后才作为可关闭的 Core 能力保留。
-- 当前 Windows 受限 subprocess 不是强安全沙箱。没有可靠隔离后端时，不应向不受信任用户开放代码执行。
+- 通用 `exec` 已删除；`code_execution` 默认关闭，仅支持 Python，并只向健康的 SYSTEM 隔离 argv Runner 提交任务。
+- 受限 Code Execution 是风险降低机制，不是可对抗恶意代码的强安全沙箱；Windows 裸机的 restricted subprocess 不会激活该工具。
 - 不自动删除历史 Partner、Book、Agent、OAuth 或旧 RAG Engine 数据。
 
 ## 文档说明

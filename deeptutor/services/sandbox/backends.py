@@ -104,8 +104,12 @@ class RunnerSidecarBackend(SandboxBackend):
             async with httpx.AsyncClient(timeout=self._connect_timeout_s) as client:
                 resp = await client.get(f"{self._base_url}/health")
                 resp.raise_for_status()
-            return True, "runner reachable"
-        except httpx.HTTPError as exc:
+                data = resp.json()
+            capabilities = data.get("capabilities", []) if isinstance(data, dict) else []
+            if "argv-v1" not in capabilities:
+                return False, "runner lacks required argv-v1 capability"
+            return True, "runner reachable (argv-v1)"
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
             return False, f"runner unreachable: {type(exc).__name__}"
 
 

@@ -226,7 +226,7 @@ async def test_call_with_empty_arguments_never_reaches_the_tool() -> None:
     # The sub-trace closes with a terminal state rather than reading as running…
     assert _call_states(events) == ["error"]
     # …on a PROGRESS event: a rejected call is recoverable, and a stream ERROR
-    # makes a partner turn re-run the whole turn on its backup model.
+    # could make an outer retry policy re-run the whole turn.
     assert [e for e in events if e.type == StreamEventType.ERROR] == []
 
 

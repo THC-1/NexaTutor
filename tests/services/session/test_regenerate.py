@@ -205,7 +205,7 @@ class TestRegenerateLastTurn:
         assert [m["id"] for m in remaining] == [user_id]
         assert assistant_id is not None and assistant_id not in {m["id"] for m in remaining}
 
-    def test_replays_book_references_from_request_snapshot(self, store: SQLiteSessionStore) -> None:
+    def test_ignores_legacy_book_references_from_request_snapshot(self, store: SQLiteSessionStore) -> None:
         sid, _, _ = _seed_session(
             store,
             user_metadata={
@@ -220,9 +220,7 @@ class TestRegenerateLastTurn:
         with patch.object(runtime, "start_turn", new=recorder):
             asyncio.run(runtime.regenerate_last_turn(sid))
 
-        assert recorder.calls[0]["book_references"] == [
-            {"book_id": "book-1", "page_ids": ["page-1"]}
-        ]
+        assert "book_references" not in recorder.calls[0]
 
     def test_user_tail_is_kept_and_no_delete(self, store: SQLiteSessionStore) -> None:
         sid, user_id, _ = _seed_session(store, assistant_content=None)

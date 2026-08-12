@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight } from "lucide-react";
 
-import { fetchAuthStatus } from "@/lib/auth";
 import {
   serviceReadiness,
   useSettings,
@@ -34,18 +33,6 @@ export default function SettingsSectionGrid({
   const { catalog, catalogEditable, diagnosticsResults } = useSettings();
 
   const category = SETTINGS_CATEGORIES.find((c) => c.key === categoryKey);
-
-  const [hideAdminOnly, setHideAdminOnly] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    fetchAuthStatus().then((authStatus) => {
-      if (cancelled || !authStatus) return;
-      setHideAdminOnly(Boolean(authStatus.enabled) && !authStatus.is_admin);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const chipFor = useCallback(
     (
@@ -90,9 +77,7 @@ export default function SettingsSectionGrid({
 
   if (!category?.children) return null;
 
-  const leaves = category.children.filter(
-    (leaf) => !(leaf.adminOnly && hideAdminOnly),
-  );
+  const leaves = category.children;
 
   return (
     <div>

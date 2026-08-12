@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from deeptutor.api import main as api_main
 
 
-def test_cors_allows_remote_http_origins_when_auth_disabled(
+def test_cors_rejects_unconfigured_remote_origins(
     monkeypatch,
 ) -> None:
     monkeypatch.delenv("AUTH_ENABLED", raising=False)
@@ -17,12 +17,14 @@ def test_cors_allows_remote_http_origins_when_auth_disabled(
 
     settings = api_main._build_cors_settings()
 
-    assert settings["allow_origin_regex"] == r"https?://.*"
+    assert settings["allow_origin_regex"] is None
+    assert settings["mode"] == "explicit"
     assert "http://localhost:3782" in settings["allow_origins"]
     assert "http://127.0.0.1:3782" in settings["allow_origins"]
+    assert "https://unconfigured.example.com" not in settings["allow_origins"]
 
 
-def test_cors_requires_explicit_origins_when_auth_enabled(monkeypatch) -> None:
+def test_legacy_remote_origins_are_ignored(monkeypatch) -> None:
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setenv("CORS_ORIGIN", "https://app.example.com/")
     monkeypatch.setenv(
@@ -33,13 +35,12 @@ def test_cors_requires_explicit_origins_when_auth_enabled(monkeypatch) -> None:
     settings = api_main._build_cors_settings()
 
     assert settings["allow_origin_regex"] is None
-    assert "https://app.example.com" in settings["allow_origins"]
-    assert "https://foo.example.com" in settings["allow_origins"]
-    assert "https://bar.example.com" in settings["allow_origins"]
-    assert settings["allow_origins"].count("https://foo.example.com") == 1
+    assert "https://app.example.com" not in settings["allow_origins"]
+    assert "https://foo.example.com" not in settings["allow_origins"]
+    assert "https://bar.example.com" not in settings["allow_origins"]
 
 
-def test_cors_normalizes_common_origin_input_mistakes(monkeypatch) -> None:
+def test_cors_does_not_accept_lan_or_public_origins(monkeypatch) -> None:
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setenv(
         "CORS_ORIGIN",
@@ -50,16 +51,16 @@ def test_cors_normalizes_common_origin_input_mistakes(monkeypatch) -> None:
     settings = api_main._build_cors_settings()
 
     assert settings["allow_origin_regex"] is None
-    assert "http://172.26.0.10:3782" in settings["allow_origins"]
-    assert "https://learn.example.com" in settings["allow_origins"]
-    assert "http://api.example.com" in settings["allow_origins"]
+    assert "http://172.26.0.10:3782" not in settings["allow_origins"]
+    assert "https://learn.example.com" not in settings["allow_origins"]
+    assert "http://api.example.com" not in settings["allow_origins"]
 
 
-def test_cors_preflight_allows_partner_patch_save() -> None:
+def test_cors_preflight_allows_configured_local_patch() -> None:
     client = TestClient(api_main.app)
 
     response = client.options(
-        "/api/v1/partners/partner",
+        "/api/v1/settings",
         headers={
             "Origin": "http://localhost:3000",
             "Access-Control-Request-Method": "PATCH",

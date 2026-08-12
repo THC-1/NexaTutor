@@ -188,7 +188,7 @@ def _build_headers(account_id: str, token: str) -> dict[str, str]:
         "Authorization": f"Bearer {token}",
         "OpenAI-Beta": "responses=experimental",
         "originator": DEFAULT_ORIGINATOR,
-        "User-Agent": "DeepTutor (python)",
+        "User-Agent": "NexaTutor (python)",
         "accept": "text/event-stream",
         "content-type": "application/json",
     }

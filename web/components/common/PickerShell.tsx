@@ -26,7 +26,7 @@ function releaseBodyFlag() {
 /**
  * Behavioral wrapper for fullscreen pickers (NotebookRecordPicker,
  * HistorySessionPicker, MemoryPicker, QuestionBankPicker, PersonaPicker,
- * BookReferencePicker, SaveToNotebookModal, …). Each of those was rolled
+ * SaveToNotebookModal and similar pickers. Each was previously rolled
  * by hand and skipped the basic dialog-behavior contract — Escape, backdrop
  * click, body scroll lock, focus trap, ARIA roles. This component lifts
  * that contract into one place so the pickers themselves only have to

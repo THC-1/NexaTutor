@@ -41,14 +41,8 @@ def _fake_config_module() -> types.ModuleType:
     """Stand in for ``deeptutor.services.config``, deferring the rest to the real one.
 
     Only the two names the question router reads at import time are overridden.
-    Everything else resolves to the real attribute, because the websocket
-    handler lazily imports ``deeptutor.api.routers.auth``, which pulls
-    *unrelated* loaders (auth settings, integrations, …) out of this same
-    package. Stubbing those one at a time was whack-a-mole, and skipping them
-    left the test passing only when an earlier test had already put
-    ``deeptutor.api.routers.auth`` in ``sys.modules`` — so the lazy import was
-    a cache hit that never reached this stand-in. Green in a full run, red on
-    its own.
+    Everything else resolves to the real attribute so this focused router test
+    does not need to duplicate the retained runtime configuration surface.
     """
     real = importlib.import_module("deeptutor.services.config")
     module = types.ModuleType("deeptutor.services.config")

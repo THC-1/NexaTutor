@@ -1,7 +1,7 @@
 """Canonical, engine-agnostic document-parse result (the bridge IR).
 
 The parse layer sits between *input material* and its consumers (question
-extraction, RAG indexing, future LightRAG). Every engine — MinerU, Docling,
+extraction and RAG indexing). Every engine — MinerU, Docling,
 markitdown — produces the same :class:`ParsedDocument` so consumers never branch
 on which engine ran.
 """

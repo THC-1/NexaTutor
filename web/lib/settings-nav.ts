@@ -1,19 +1,13 @@
 "use client";
 
 import {
-  AudioLines,
   Bot,
   Boxes,
   Brain,
   BrainCircuit,
-  Clapperboard,
   Database,
-  FileScan,
-  Image as ImageIcon,
   Library,
   MessagesSquare,
-  Mic,
-  Network,
   Palette,
   Paperclip,
   Search,
@@ -108,54 +102,6 @@ const MODEL_CHILDREN: SettingsLeaf[] = [
     tile: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
     service: "search",
   },
-  {
-    key: "tts",
-    href: "/settings/tts",
-    label: { zh: "语音合成", en: "Text-to-Speech" },
-    blurb: {
-      zh: "朗读助手回复的 TTS 供应商。",
-      en: "Text-to-speech for reading replies aloud.",
-    },
-    icon: AudioLines,
-    tile: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
-    service: "tts",
-  },
-  {
-    key: "stt",
-    href: "/settings/stt",
-    label: { zh: "语音识别", en: "Speech-to-Text" },
-    blurb: {
-      zh: "转写麦克风录音的 STT 供应商。",
-      en: "Speech-to-text for the composer microphone.",
-    },
-    icon: Mic,
-    tile: "bg-pink-500/10 text-pink-600 dark:text-pink-400",
-    service: "stt",
-  },
-  {
-    key: "imagegen",
-    href: "/settings/image",
-    label: { zh: "文生图", en: "Image Generation" },
-    blurb: {
-      zh: "chat imagegen 工具使用的文生图模型。",
-      en: "Text-to-image model for the chat imagegen tool.",
-    },
-    icon: ImageIcon,
-    tile: "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400",
-    service: "imagegen",
-  },
-  {
-    key: "videogen",
-    href: "/settings/video",
-    label: { zh: "文生视频", en: "Video Generation" },
-    blurb: {
-      zh: "chat videogen 工具使用的文生视频模型。",
-      en: "Text-to-video model for the chat videogen tool.",
-    },
-    icon: Clapperboard,
-    tile: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
-    service: "videogen",
-  },
 ];
 
 const CHAT_CHILDREN: SettingsLeaf[] = [
@@ -192,6 +138,14 @@ const CHAT_CHILDREN: SettingsLeaf[] = [
     icon: Paperclip,
     tile: "bg-teal-500/10 text-teal-600 dark:text-teal-400",
     adminOnly: true,
+  },
+  {
+    key: "agents",
+    href: "/settings/agents",
+    label: { zh: "本地智能体", en: "Local Agents" },
+    blurb: { zh: "配置 My Agents 与本地 Subagent Provider。", en: "Configure My Agents and local subagent providers." },
+    icon: Bot,
+    tile: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
   },
 ];
 
@@ -280,21 +234,11 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     href: "/settings/appearance",
   },
   {
-    key: "network",
-    label: { zh: "网络", en: "Network" },
-    blurb: {
-      zh: "端口、浏览器 API 地址与 CORS",
-      en: "Ports, browser API base, and CORS",
-    },
-    icon: Network,
-    href: "/settings/network",
-  },
-  {
     key: "models",
     label: { zh: "模型", en: "Models" },
     blurb: {
-      zh: "语言、向量、搜索、语音与生成模型",
-      en: "Language, embedding, search, voice, and generation models",
+      zh: "语言模型、Embedding 与网络搜索",
+      en: "Language models, embedding, and web search",
     },
     icon: Boxes,
     href: "/settings/models",
@@ -309,7 +253,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
   },
   {
     key: "chat",
-    label: { zh: "聊天", en: "Chat" },
+    label: { zh: "Chat 与工具", en: "Chat & Tools" },
     blurb: {
       zh: "工具、能力与附件",
       en: "Tools, capabilities, and attachments",
@@ -319,22 +263,11 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     children: CHAT_CHILDREN,
   },
   {
-    key: "agents",
-    label: { zh: "伙伴和智能体", en: "Partners & Agents" },
-    blurb: {
-      zh: "配置可在对话中调用的子智能体",
-      en: "Configure the subagents you can call on in chat",
-    },
-    icon: Bot,
-    href: "/settings/agents",
-    children: AGENT_CHILDREN,
-  },
-  {
     key: "memory",
     label: { zh: "记忆", en: "Memory" },
     blurb: {
-      zh: "分块、预算、去重与引用策略",
-      en: "Chunking, budget, dedup, and reference policies",
+      zh: "查看并管理本地学习记忆",
+      en: "Review and manage local learning memory",
     },
     icon: BrainCircuit,
     href: "/settings/memory",

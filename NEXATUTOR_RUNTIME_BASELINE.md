@@ -24,7 +24,8 @@ write_note
 
 - Core 候选：`ask_user`、`code_execution`、`kb_files`、`list_notebook`、`paper_search`、`rag`、Memory / Source / Web / Note 工具，以及 Mastery、Solve、Quiz / Grading 内部工具。
 - Optional 候选：`imagegen`、本地 Obsidian 工具、`read_skill`。
-- Remove 候选：`brainstorm`、`consult_subagent`、`cron`、`exec`、`geogebra_analysis`、`github`、`load_tools`、三个 Partner Tool、`reason`、`videogen`。
+- Core：`consult_subagent`（按 2026-08-12 修订决定保留 My Agents / Subagents）。
+- Remove 候选：`brainstorm`、`cron`、`exec`、`geogebra_analysis`、`github`、`load_tools`、三个 Partner Tool、`reason`、`videogen`。
 
 ### LLM Provider Spec（36）
 
@@ -69,18 +70,18 @@ ovms, nvidia_nim, groq, qianfan
 
 已经确认的最小目标是 `deeptutor/api/main.py` 中 Partner 生命周期钩子：启动时曾调用 `auto_start_partners()`，关闭时曾调用 `stop_all(preserve_auto_start=True)`。
 
-这两个调用已移除，并有 `tests/api/test_main_partner_lifecycle.py` 防回归测试。当前只证明应用生命周期不再启动 IM Channel；Partner API、CLI、Tools、实现、依赖、Memory 迁移和用户数据尚未删除。
+这两个调用已移除，并有 `tests/api/test_main_partner_lifecycle.py` 防回归测试。随后主应用的 Partner API Router 注册也已移除，并由 `tests/api/test_main_partner_router_registration.py` 证明 `/api/v1/partners` 不存在而 `/api/v1/subagents/partners` 暂时保留。Partner Router 实现、CLI、Tools、Plugin 转发、Subagent 旁路、UI、依赖、Memory 迁移和用户数据尚未删除。
 
 后续取消注册继续拆成独立小步：
 
-1. Partner API Router。
-2. Partner CLI Group。
-3. 三个 Partner Built-in Tool。
-4. Partner Subagent Backend。
+1. Partner API Router（已完成）。
+2. Partner CLI Group（已完成）。
+3. 三个 Partner Built-in Tool（已完成；Registry 从基线 43 减为 40）。
+4. Partner Subagent Backend（下一步）。
 5. 在确认共享所有权后处理 Partner 旁路和 Plugin 转发。
 
 ## 基线验证
 
 每个小步都应关闭字节码写入并执行后端 import smoke，再为正在变化的 Registry 或 Router 运行精确断言。项目开发环境应安装 `pytest-asyncio` 后再解释异步测试结果。
 
-被跟踪的 `web/.next-deeptutor/` 仍混有历史生成物变化，因此原地前端生产构建必须使用被忽略的 `web/.next`，不得继续覆盖该目录。
+`web/.next-deeptutor/` 已停止 Git 跟踪并由 `.gitignore` 忽略；前端生产构建仍必须使用被忽略的 `web/.next`，不得重新引入历史构建目录。

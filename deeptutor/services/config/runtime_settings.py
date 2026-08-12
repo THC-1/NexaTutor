@@ -10,26 +10,18 @@ from typing import Any, Callable
 from deeptutor.services.file_io import atomic_write_json as _atomic_write_json
 from deeptutor.services.path_service import get_path_service
 
-from .origins import normalize_origins
-
 DEFAULT_SYSTEM_SETTINGS: dict[str, Any] = {
     "version": 1,
     "backend_port": 8001,
     "frontend_port": 3782,
-    "next_public_api_base_external": "",
     "next_public_api_base": "",
-    "cors_origin": "",
-    "cors_origins": [],
     "disable_ssl_verify": False,
     "chat_attachment_dir": "",
-    # Enable the restricted-subprocess code-execution sandbox (the `exec` /
-    # `code_execution` tools the office skills — docx/pdf/pptx/xlsx — run on).
-    # Default on so document generation works out of the box across all
-    # deployment shapes; a stronger backend (runner sidecar / bwrap) still
-    # takes precedence when available. Set false to disable host-side exec.
-    "sandbox_allow_subprocess": True,
+    # Host subprocess is not an acceptable Code Execution isolation backend.
+    # It remains available only as an explicit developer diagnostic fallback.
+    "sandbox_allow_subprocess": False,
     # Chat attachment policy. Size caps gate what the composer accepts and
-    # what the turn runtime / partner upload endpoints extract; the char
+    # what the turn runtime and upload endpoints extract; the char
     # budgets bound how much extracted text is inlined into the LLM context
     # per document / per turn. Enforcement reads these at call time, so
     # changes apply to the next message — but uploads whose base64 payload
@@ -47,24 +39,6 @@ DEFAULT_SYSTEM_SETTINGS: dict[str, Any] = {
 CHAT_ATTACHMENT_MAX_FILE_MB_RANGE = (1, 1024)
 CHAT_ATTACHMENT_MAX_TOTAL_MB_RANGE = (1, 2048)
 CHAT_ATTACHMENT_CHARS_RANGE = (10_000, 5_000_000)
-
-DEFAULT_AUTH_SETTINGS: dict[str, Any] = {
-    "version": 1,
-    "enabled": False,
-    "username": "admin",
-    "password_hash": "",
-    "token_expire_hours": 24,
-    "cookie_secure": False,
-}
-
-DEFAULT_INTEGRATIONS_SETTINGS: dict[str, Any] = {
-    "version": 1,
-    "pocketbase_url": "",
-    "pocketbase_port": 8090,
-    "pocketbase_external_url": "",
-    "pocketbase_admin_email": "",
-    "pocketbase_admin_password": "",
-}
 
 # Document parsing settings. The parse layer (deeptutor/services/parsing)
 # supports several pluggable engines; one is active at a time. The persisted
@@ -186,18 +160,6 @@ DEFAULT_DOCUMENT_PARSING_SETTINGS: dict[str, Any] = {
 # tests reference ``DEFAULT_MINERU_SETTINGS``; it now denotes the engine slice.
 DEFAULT_MINERU_SETTINGS: dict[str, Any] = _DEFAULT_MINERU_ENGINE
 
-# PageIndex cloud RAG engine. A KB indexed with the ``pageindex`` provider
-# ships its documents to the hosted PageIndex service for tree building and
-# reasoning-based retrieval. Only an API key (per PageIndex account) and the
-# API base URL are needed; the same key is reused by every ``pageindex`` KB.
-# Kept in its own JSON file so the credential lives beside other per-feature
-# settings and never leaks into model/network config.
-DEFAULT_PAGEINDEX_SETTINGS: dict[str, Any] = {
-    "version": 1,
-    "api_key": "",
-    "api_base_url": "https://api.pageindex.ai",
-}
-
 # LlamaIndex local RAG engine. These are the retrieval + chunking knobs the
 # default engine exposes; they were previously hardcoded / env-only. Kept in
 # their own JSON file so the engine's detail page can read/write them.
@@ -226,32 +188,7 @@ DEFAULT_LLAMAINDEX_SETTINGS: dict[str, Any] = {
     "chunk_overlap": 50,
 }
 
-# GraphRAG retrieval knobs (microsoft/graphrag). Only query-time params that the
-# engine passes explicitly (engine.py) are exposed; indexing knobs are left to
-# GraphRAG's auto-config on purpose (the settings.yaml bridge is deliberately
-# minimal). ``response_type`` is a free-form GraphRAG answer style; the UI offers
-# presets but any string is accepted. ``community_level`` controls graph
-# traversal granularity (local/drift). ``dynamic_community_selection`` only
-# affects global search.
-DEFAULT_GRAPHRAG_SETTINGS: dict[str, Any] = {
-    "version": 1,
-    "response_type": "Multiple Paragraphs",
-    "community_level": 2,
-    "dynamic_community_selection": False,
-}
-
-# LightRAG retrieval knobs (HKUDS/LightRAG via RAG-Anything). ``top_k`` is the
-# number of entities/relations the query pulls; ``response_type`` mirrors
-# GraphRAG's. These ride into ``QueryParam`` via the engine's aquery() call;
-# wiring is defensive (an older RAG-Anything that rejects a kwarg degrades to a
-# mode-only query).
-DEFAULT_LIGHTRAG_SETTINGS: dict[str, Any] = {
-    "version": 1,
-    "top_k": 60,
-    "response_type": "Multiple Paragraphs",
-}
-
-IGNORE_PROCESS_OVERRIDES_ENV = "DEEPTUTOR_IGNORE_PROCESS_ENV_OVERRIDES"
+IGNORE_PROCESS_OVERRIDES_ENV = "NEXATUTOR_IGNORE_PROCESS_ENV_OVERRIDES"
 TRUTHY = {"1", "true", "yes", "on"}
 FALSY = {"0", "false", "no", "off"}
 
@@ -282,10 +219,6 @@ def _coerce_clamped_int(value: Any, default: int, low: int, high: int) -> int:
 def _coerce_port(value: Any, default: int) -> int:
     port = _coerce_int(value, default)
     return port if 1 <= port <= 65535 else default
-
-
-def _coerce_origins(value: Any) -> list[str]:
-    return normalize_origins(value)
 
 
 def _deepcopy_default(defaults: dict[str, Any]) -> dict[str, Any]:
@@ -362,36 +295,6 @@ class RuntimeSettingsService:
         _atomic_write_json(self.path_for("system"), payload)
         return payload
 
-    def load_auth(self, *, include_process_overrides: bool = True) -> dict[str, Any]:
-        payload = self._load_or_create(
-            "auth",
-            DEFAULT_AUTH_SETTINGS,
-            self._normalize_auth,
-        )
-        if include_process_overrides:
-            payload = self._apply_auth_process_overrides(payload)
-        return payload
-
-    def save_auth(self, settings: dict[str, Any]) -> dict[str, Any]:
-        payload = self._normalize_auth({**DEFAULT_AUTH_SETTINGS, **settings})
-        _atomic_write_json(self.path_for("auth"), payload)
-        return payload
-
-    def load_integrations(self, *, include_process_overrides: bool = True) -> dict[str, Any]:
-        payload = self._load_or_create(
-            "integrations",
-            DEFAULT_INTEGRATIONS_SETTINGS,
-            self._normalize_integrations,
-        )
-        if include_process_overrides:
-            payload = self._apply_integrations_process_overrides(payload)
-        return payload
-
-    def save_integrations(self, settings: dict[str, Any]) -> dict[str, Any]:
-        payload = self._normalize_integrations({**DEFAULT_INTEGRATIONS_SETTINGS, **settings})
-        _atomic_write_json(self.path_for("integrations"), payload)
-        return payload
-
     def load_document_parsing(self, *, include_process_overrides: bool = True) -> dict[str, Any]:
         """Return the full v2 document-parsing structure (all engines)."""
         self._migrate_legacy_document_parsing_file()
@@ -441,21 +344,6 @@ class RuntimeSettingsService:
         _atomic_write_json(self.path_for(DOCUMENT_PARSING_SETTINGS_NAME), payload)
         return payload["engines"][DOCUMENT_PARSING_ENGINE_MINERU]
 
-    def load_pageindex(self, *, include_process_overrides: bool = True) -> dict[str, Any]:
-        payload = self._load_or_create(
-            "pageindex",
-            DEFAULT_PAGEINDEX_SETTINGS,
-            self._normalize_pageindex,
-        )
-        if include_process_overrides:
-            payload = self._apply_pageindex_process_overrides(payload)
-        return payload
-
-    def save_pageindex(self, settings: dict[str, Any]) -> dict[str, Any]:
-        payload = self._normalize_pageindex({**DEFAULT_PAGEINDEX_SETTINGS, **settings})
-        _atomic_write_json(self.path_for("pageindex"), payload)
-        return payload
-
     def load_llamaindex(self, *, include_process_overrides: bool = True) -> dict[str, Any]:
         payload = self._load_or_create(
             "llamaindex",
@@ -471,57 +359,24 @@ class RuntimeSettingsService:
         _atomic_write_json(self.path_for("llamaindex"), payload)
         return payload
 
-    def load_graphrag(self) -> dict[str, Any]:
-        return self._load_or_create("graphrag", DEFAULT_GRAPHRAG_SETTINGS, self._normalize_graphrag)
-
-    def save_graphrag(self, settings: dict[str, Any]) -> dict[str, Any]:
-        payload = self._normalize_graphrag({**DEFAULT_GRAPHRAG_SETTINGS, **settings})
-        _atomic_write_json(self.path_for("graphrag"), payload)
-        return payload
-
-    def load_lightrag(self) -> dict[str, Any]:
-        return self._load_or_create("lightrag", DEFAULT_LIGHTRAG_SETTINGS, self._normalize_lightrag)
-
-    def save_lightrag(self, settings: dict[str, Any]) -> dict[str, Any]:
-        payload = self._normalize_lightrag({**DEFAULT_LIGHTRAG_SETTINGS, **settings})
-        _atomic_write_json(self.path_for("lightrag"), payload)
-        return payload
-
     def ensure_defaults(self) -> None:
         self.load_system(include_process_overrides=False)
-        self.load_auth(include_process_overrides=False)
-        self.load_integrations(include_process_overrides=False)
         self.load_mineru(include_process_overrides=False)
-        self.load_pageindex(include_process_overrides=False)
         self.load_llamaindex(include_process_overrides=False)
-        self.load_graphrag()
-        self.load_lightrag()
 
     def render_environment(self) -> dict[str, str]:
         """Render non-model settings into process env names for subprocesses."""
         system = self.load_system()
-        auth = self.load_auth()
-        integrations = self.load_integrations()
         return {
             "BACKEND_PORT": str(system["backend_port"]),
             "FRONTEND_PORT": str(system["frontend_port"]),
-            "NEXT_PUBLIC_API_BASE_EXTERNAL": system["next_public_api_base_external"],
             "NEXT_PUBLIC_API_BASE": system["next_public_api_base"],
-            "CORS_ORIGIN": system["cors_origin"],
-            "CORS_ORIGINS": ",".join(system["cors_origins"]),
             "DISABLE_SSL_VERIFY": _bool_env(system["disable_ssl_verify"]),
             "CHAT_ATTACHMENT_DIR": system["chat_attachment_dir"],
-            "DEEPTUTOR_SANDBOX_ALLOW_SUBPROCESS": _bool_env(system["sandbox_allow_subprocess"]),
-            "AUTH_ENABLED": _bool_env(auth["enabled"]),
-            "AUTH_USERNAME": auth["username"],
-            "AUTH_PASSWORD_HASH": auth["password_hash"],
-            "AUTH_TOKEN_EXPIRE_HOURS": str(auth["token_expire_hours"]),
-            "AUTH_COOKIE_SECURE": _bool_env(auth["cookie_secure"]),
-            "NEXT_PUBLIC_AUTH_ENABLED": _bool_env(auth["enabled"]),
+            "NEXATUTOR_SANDBOX_ALLOW_SUBPROCESS": _bool_env(system["sandbox_allow_subprocess"]),
             # Consumed server-side by the Next.js middleware (web/proxy.ts) at
             # request time — NOT inlined into the browser bundle. The proxy
-            # rewrites /api/* and /ws/* to DEEPTUTOR_API_BASE_URL and uses
-            # DEEPTUTOR_AUTH_ENABLED to gate the login redirect. The launcher and
+            # rewrites /api/* and /ws/* to DEEPTUTOR_API_BASE_URL. The launcher and
             # the Docker entrypoint both export these through render_environment,
             # so the two deployment paths stay in sync. DEEPTUTOR_API_BASE_URL is
             # the address the frontend *server* uses to reach the backend; the
@@ -532,17 +387,10 @@ class RuntimeSettingsService:
             # (IPv4 only), so every rewritten /api/* request fails to connect.
             # The launcher passes the same literal (see runtime/launcher.py), so
             # both deployment paths agree.
-            "DEEPTUTOR_API_BASE_URL": (
+            "NEXATUTOR_API_BASE_URL": (
                 system["next_public_api_base"]
-                or system["next_public_api_base_external"]
                 or f"http://127.0.0.1:{system['backend_port']}"
             ),
-            "DEEPTUTOR_AUTH_ENABLED": _bool_env(auth["enabled"]),
-            "POCKETBASE_URL": integrations["pocketbase_url"],
-            "POCKETBASE_PORT": str(integrations["pocketbase_port"]),
-            "POCKETBASE_EXTERNAL_URL": integrations["pocketbase_external_url"],
-            "POCKETBASE_ADMIN_EMAIL": integrations["pocketbase_admin_email"],
-            "POCKETBASE_ADMIN_PASSWORD": integrations["pocketbase_admin_password"],
         }
 
     def export_environment(self, *, overwrite: bool = True) -> dict[str, str]:
@@ -607,7 +455,13 @@ class RuntimeSettingsService:
         legacy_path.rename(new_path)
 
     def _ignore_process_overrides(self) -> bool:
-        return _coerce_bool(self.process_env.get(IGNORE_PROCESS_OVERRIDES_ENV), False)
+        return _coerce_bool(
+            self.process_env.get(
+                IGNORE_PROCESS_OVERRIDES_ENV,
+                self.process_env.get("DEEPTUTOR_IGNORE_PROCESS_ENV_OVERRIDES"),
+            ),
+            False,
+        )
 
     def _apply_system_process_overrides(self, settings: dict[str, Any]) -> dict[str, Any]:
         payload = dict(settings)
@@ -615,21 +469,16 @@ class RuntimeSettingsService:
             payload["backend_port"] = value
         if value := self._process_env_value("FRONTEND_PORT"):
             payload["frontend_port"] = value
-        if value := self._process_env_value("NEXT_PUBLIC_API_BASE_EXTERNAL"):
-            payload["next_public_api_base_external"] = value
-        if value := self._process_env_value("PUBLIC_API_BASE"):
-            payload["next_public_api_base_external"] = value
         if value := self._process_env_value("NEXT_PUBLIC_API_BASE"):
             payload["next_public_api_base"] = value
-        if value := self._process_env_value("CORS_ORIGIN"):
-            payload["cors_origin"] = value
-        if value := self._process_env_value("CORS_ORIGINS"):
-            payload["cors_origins"] = value
         if value := self._process_env_value("DISABLE_SSL_VERIFY"):
             payload["disable_ssl_verify"] = value
         if value := self._process_env_value("CHAT_ATTACHMENT_DIR"):
             payload["chat_attachment_dir"] = value
-        if value := self._process_env_value("DEEPTUTOR_SANDBOX_ALLOW_SUBPROCESS"):
+        if value := (
+            self._process_env_value("NEXATUTOR_SANDBOX_ALLOW_SUBPROCESS")
+            or self._process_env_value("DEEPTUTOR_SANDBOX_ALLOW_SUBPROCESS")
+        ):
             payload["sandbox_allow_subprocess"] = value
         if value := self._process_env_value("CHAT_ATTACHMENT_MAX_FILE_MB"):
             payload["chat_attachment_max_file_mb"] = value
@@ -640,37 +489,6 @@ class RuntimeSettingsService:
         if value := self._process_env_value("CHAT_ATTACHMENT_MAX_CHARS_TOTAL"):
             payload["chat_attachment_max_chars_total"] = value
         return self._normalize_system(payload)
-
-    def _apply_auth_process_overrides(self, settings: dict[str, Any]) -> dict[str, Any]:
-        payload = dict(settings)
-        if value := (
-            self._process_env_value("AUTH_ENABLED")
-            or self._process_env_value("NEXT_PUBLIC_AUTH_ENABLED")
-        ):
-            payload["enabled"] = value
-        if value := self._process_env_value("AUTH_USERNAME"):
-            payload["username"] = value
-        if value := self._process_env_value("AUTH_PASSWORD_HASH"):
-            payload["password_hash"] = value
-        if value := self._process_env_value("AUTH_TOKEN_EXPIRE_HOURS"):
-            payload["token_expire_hours"] = value
-        if value := self._process_env_value("AUTH_COOKIE_SECURE"):
-            payload["cookie_secure"] = value
-        return self._normalize_auth(payload)
-
-    def _apply_integrations_process_overrides(self, settings: dict[str, Any]) -> dict[str, Any]:
-        payload = dict(settings)
-        if value := self._process_env_value("POCKETBASE_URL"):
-            payload["pocketbase_url"] = value
-        if value := self._process_env_value("POCKETBASE_PORT"):
-            payload["pocketbase_port"] = value
-        if value := self._process_env_value("POCKETBASE_EXTERNAL_URL"):
-            payload["pocketbase_external_url"] = value
-        if value := self._process_env_value("POCKETBASE_ADMIN_EMAIL"):
-            payload["pocketbase_admin_email"] = value
-        if value := self._process_env_value("POCKETBASE_ADMIN_PASSWORD"):
-            payload["pocketbase_admin_password"] = value
-        return self._normalize_integrations(payload)
 
     def _apply_mineru_process_overrides(self, settings: dict[str, Any]) -> dict[str, Any]:
         payload = dict(settings)
@@ -694,28 +512,13 @@ class RuntimeSettingsService:
             payload["allow_local_model_download"] = _coerce_bool(value, False)
         return self._normalize_mineru_engine(payload)
 
-    def _apply_pageindex_process_overrides(self, settings: dict[str, Any]) -> dict[str, Any]:
-        payload = dict(settings)
-        if value := self._process_env_value("PAGEINDEX_API_KEY"):
-            payload["api_key"] = value
-        if value := self._process_env_value("PAGEINDEX_API_BASE_URL"):
-            payload["api_base_url"] = value
-        return self._normalize_pageindex(payload)
-
-    def _normalize_pageindex(self, settings: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "version": 1,
-            "api_key": _string(settings.get("api_key")),
-            "api_base_url": _string(settings.get("api_base_url")).rstrip("/")
-            or "https://api.pageindex.ai",
-        }
-
     def _apply_llamaindex_process_overrides(self, settings: dict[str, Any]) -> dict[str, Any]:
         # Only the retrieval profile had an env override historically
         # (DEEPTUTOR_RAG_RETRIEVAL_PROFILE / RAG_RETRIEVAL_PROFILE); preserve it.
         payload = dict(settings)
         if value := (
-            self._process_env_value("DEEPTUTOR_RAG_RETRIEVAL_PROFILE")
+            self._process_env_value("NEXATUTOR_RAG_RETRIEVAL_PROFILE")
+            or self._process_env_value("DEEPTUTOR_RAG_RETRIEVAL_PROFILE")
             or self._process_env_value("RAG_RETRIEVAL_PROFILE")
         ):
             payload["retrieval_profile"] = value
@@ -742,29 +545,6 @@ class RuntimeSettingsService:
             ),
             "chunk_size": chunk_size,
             "chunk_overlap": chunk_overlap,
-        }
-
-    def _normalize_response_type(self, value: Any) -> str:
-        # GraphRAG/LightRAG accept any answer-style string; just trim + cap so a
-        # pathological value can't blow up a prompt.
-        text = _string(value) or "Multiple Paragraphs"
-        return text[:80]
-
-    def _normalize_graphrag(self, settings: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "version": 1,
-            "response_type": self._normalize_response_type(settings.get("response_type")),
-            "community_level": _coerce_clamped_int(settings.get("community_level"), 2, 0, 5),
-            "dynamic_community_selection": _coerce_bool(
-                settings.get("dynamic_community_selection"), False
-            ),
-        }
-
-    def _normalize_lightrag(self, settings: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "version": 1,
-            "top_k": _coerce_clamped_int(settings.get("top_k"), 60, 1, 200),
-            "response_type": self._normalize_response_type(settings.get("response_type")),
         }
 
     def _normalize_document_parsing(self, settings: dict[str, Any]) -> dict[str, Any]:
@@ -870,9 +650,6 @@ class RuntimeSettingsService:
         return {}
 
     def _normalize_system(self, settings: dict[str, Any]) -> dict[str, Any]:
-        public_api_base = _string(settings.get("next_public_api_base_external")) or _string(
-            settings.get("public_api_base")
-        )
         max_file_mb = _coerce_clamped_int(
             settings.get("chat_attachment_max_file_mb"),
             DEFAULT_SYSTEM_SETTINGS["chat_attachment_max_file_mb"],
@@ -889,14 +666,11 @@ class RuntimeSettingsService:
             "version": 1,
             "backend_port": _coerce_port(settings.get("backend_port"), 8001),
             "frontend_port": _coerce_port(settings.get("frontend_port"), 3782),
-            "next_public_api_base_external": public_api_base,
             "next_public_api_base": _string(settings.get("next_public_api_base")),
-            "cors_origin": _string(settings.get("cors_origin")),
-            "cors_origins": _coerce_origins(settings.get("cors_origins")),
             "disable_ssl_verify": _coerce_bool(settings.get("disable_ssl_verify"), False),
             "chat_attachment_dir": _string(settings.get("chat_attachment_dir")),
             "sandbox_allow_subprocess": _coerce_bool(
-                settings.get("sandbox_allow_subprocess"), True
+                settings.get("sandbox_allow_subprocess"), False
             ),
             "chat_attachment_max_file_mb": max_file_mb,
             "chat_attachment_max_total_mb": max_total_mb,
@@ -912,38 +686,12 @@ class RuntimeSettingsService:
             ),
         }
 
-    def _normalize_auth(self, settings: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "version": 1,
-            "enabled": _coerce_bool(settings.get("enabled"), False),
-            "username": _string(settings.get("username")) or "admin",
-            "password_hash": _string(settings.get("password_hash")),
-            "token_expire_hours": max(1, _coerce_int(settings.get("token_expire_hours"), 24)),
-            "cookie_secure": _coerce_bool(settings.get("cookie_secure"), False),
-        }
-
-    def _normalize_integrations(self, settings: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "version": 1,
-            "pocketbase_url": _string(settings.get("pocketbase_url")).rstrip("/"),
-            "pocketbase_port": _coerce_port(settings.get("pocketbase_port"), 8090),
-            "pocketbase_external_url": _string(settings.get("pocketbase_external_url")).rstrip("/"),
-            "pocketbase_admin_email": _string(settings.get("pocketbase_admin_email")),
-            "pocketbase_admin_password": _string(settings.get("pocketbase_admin_password")),
-        }
-
-
 def _bool_env(value: Any) -> str:
     return "true" if _coerce_bool(value, False) else "false"
 
 
 def _global_settings_dir() -> Path:
-    try:
-        from deeptutor.multi_user.paths import get_admin_path_service
-
-        return get_admin_path_service().get_settings_dir()
-    except Exception:
-        return get_path_service().get_settings_dir()
+    return get_path_service().get_settings_dir()
 
 
 def get_runtime_settings_service() -> RuntimeSettingsService:
@@ -982,7 +730,7 @@ def get_chat_attachment_limits() -> ChatAttachmentLimits:
     """Resolve the chat attachment policy from system.json (+ env overrides).
 
     Read at call time by every enforcement site (turn runtime extraction,
-    partner uploads, the composer via the settings API) so edits apply to the
+    uploads and the composer via the settings API) so edits apply to the
     next message without a restart.
     """
     system = load_system_settings()
@@ -1031,28 +779,12 @@ def get_ws_max_size() -> int:
 HTTP_KEEP_ALIVE_TIMEOUT = 300
 
 
-def load_auth_settings() -> dict[str, Any]:
-    return get_runtime_settings_service().load_auth()
-
-
-def load_integrations_settings() -> dict[str, Any]:
-    return get_runtime_settings_service().load_integrations()
-
-
 def load_mineru_settings() -> dict[str, Any]:
     return get_runtime_settings_service().load_mineru()
 
 
 def load_llamaindex_settings() -> dict[str, Any]:
     return get_runtime_settings_service().load_llamaindex()
-
-
-def load_graphrag_settings() -> dict[str, Any]:
-    return get_runtime_settings_service().load_graphrag()
-
-
-def load_lightrag_settings() -> dict[str, Any]:
-    return get_runtime_settings_service().load_lightrag()
 
 
 def load_document_parsing_settings() -> dict[str, Any]:
@@ -1067,14 +799,9 @@ __all__ = [
     "CHAT_ATTACHMENT_CHARS_RANGE",
     "CHAT_ATTACHMENT_MAX_FILE_MB_RANGE",
     "CHAT_ATTACHMENT_MAX_TOTAL_MB_RANGE",
-    "DEFAULT_AUTH_SETTINGS",
     "DEFAULT_DOCUMENT_PARSING_SETTINGS",
-    "DEFAULT_GRAPHRAG_SETTINGS",
-    "DEFAULT_INTEGRATIONS_SETTINGS",
-    "DEFAULT_LIGHTRAG_SETTINGS",
     "DEFAULT_LLAMAINDEX_SETTINGS",
     "DEFAULT_MINERU_SETTINGS",
-    "DEFAULT_PAGEINDEX_SETTINGS",
     "DEFAULT_SYSTEM_SETTINGS",
     "DOCUMENT_PARSING_ENGINE_DOCLING",
     "DOCUMENT_PARSING_ENGINE_MARKITDOWN",
@@ -1091,11 +818,7 @@ __all__ = [
     "get_chat_attachment_limits",
     "get_runtime_settings_service",
     "get_ws_max_size",
-    "load_auth_settings",
     "load_document_parsing_settings",
-    "load_graphrag_settings",
-    "load_integrations_settings",
-    "load_lightrag_settings",
     "load_llamaindex_settings",
     "load_mineru_settings",
     "load_system_settings",

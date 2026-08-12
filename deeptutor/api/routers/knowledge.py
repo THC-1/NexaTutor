@@ -39,30 +39,26 @@ from deeptutor.knowledge.kb_types import is_connected_kb
 from deeptutor.knowledge.manager import KnowledgeBaseManager
 from deeptutor.knowledge.naming import validate_knowledge_base_name
 from deeptutor.knowledge.progress_tracker import ProgressStage, ProgressTracker
-from deeptutor.multi_user.context import get_current_user
-from deeptutor.multi_user.knowledge_access import (
+from deeptutor.services.local_workspace import get_local_user
+from deeptutor.services.local_workspace import (
     assert_writable,
     current_kb_base_dir,
     current_kb_manager,
     manager_for_resource,
     resolve_kb,
 )
-from deeptutor.multi_user.knowledge_access import (
+from deeptutor.services.local_workspace import (
     list_visible_knowledge_bases as list_visible_kb_access,
 )
 from deeptutor.services.config import PROJECT_ROOT, load_config_with_main
 from deeptutor.services.file_io import atomic_write_json
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
-    GRAPHRAG_PROVIDER,
-    LIGHTRAG_PROVIDER,
-    PAGEINDEX_PROVIDER,
     normalize_provider_name,
     provider_uses_embedding_versions,
 )
 from deeptutor.services.rag.file_routing import FileTypeRouter
 from deeptutor.services.rag.linked_kb import (
-    LINKABLE_PROVIDERS,
     assert_path_allowed,
     probe_linked_folder,
 )
@@ -336,23 +332,12 @@ def _save_uploaded_files(
     files: list[UploadFile],
     target_dir: Path,
     allowed_extensions: set[str] | None = None,
-    kb_name: str | None = None,
     rel_paths: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """
-    Save uploaded files to the local raw/ directory.
-
-    When PocketBase is enabled and ``kb_name`` is supplied, each file is also
-    uploaded to the PocketBase knowledge_bases record as a file attachment
-    (best-effort — local write is always the primary path).
-    """
+    """Save uploaded files to the local raw/ directory."""
     uploaded_files: list[str] = []
     uploaded_file_paths: list[str] = []
     written_file_paths: list[Path] = []
-
-    from deeptutor.services.pocketbase_client import is_pocketbase_enabled
-
-    _pb_sync = is_pocketbase_enabled() and bool(kb_name)
 
     try:
         for idx, file in enumerate(files):
@@ -389,15 +374,6 @@ def _save_uploaded_files(
                         written_file_paths.append(dest)
                         uploaded_files.append(dest.relative_to(target_dir).as_posix())
                         uploaded_file_paths.append(str(dest))
-                        if _pb_sync and kb_name:
-                            try:
-                                _upload_file_to_pb(kb_name, dest.name, dest)
-                            except Exception as pb_exc:
-                                logger.debug(
-                                    "PocketBase file upload failed for '%s': %s",
-                                    dest.name,
-                                    pb_exc,
-                                )
                     continue
 
                 file_path = dest_dir / sanitized_filename
@@ -426,16 +402,6 @@ def _save_uploaded_files(
                 uploaded_files.append(rel_name)
                 uploaded_file_paths.append(str(file_path))
 
-                # Mirror file to PocketBase when enabled (best-effort, non-blocking).
-                if _pb_sync and kb_name:
-                    try:
-                        _upload_file_to_pb(kb_name, sanitized_filename, file_path)
-                    except Exception as pb_exc:
-                        logger.debug(
-                            "PocketBase file upload failed for '%s': %s",
-                            sanitized_filename,
-                            pb_exc,
-                        )
             except Exception as e:
                 if file_path and file_path.exists():
                     try:
@@ -462,16 +428,14 @@ async def _save_uploaded_files_off_loop(
     files: list[UploadFile],
     target_dir: Path,
     allowed_extensions: set[str] | None = None,
-    kb_name: str | None = None,
     rel_paths: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """:func:`_save_uploaded_files` on a worker thread.
 
-    That function blocks end to end — a chunked write of every uploaded byte,
-    zip extraction for archive members, and (when PocketBase is enabled) one
-    synchronous HTTP upload per file. Called inline from an ``async def``
-    route it held the event loop for the whole batch, so every other request
-    — chat WebSockets included — stalled until the upload finished (#777).
+    That function blocks end to end while writing uploaded bytes and extracting
+    archive members. Called inline from an ``async def`` route it held the event
+    loop for the whole batch, so every other request — chat WebSockets included
+    — stalled until the upload finished (#777).
 
     Safe to hand to a thread: it only touches ``UploadFile.file``, the plain
     ``SpooledTemporaryFile`` underneath, never the async ``UploadFile`` API.
@@ -481,7 +445,6 @@ async def _save_uploaded_files_off_loop(
         files,
         target_dir,
         allowed_extensions=allowed_extensions,
-        kb_name=kb_name,
         rel_paths=rel_paths,
     )
 
@@ -552,29 +515,6 @@ def _validate_upload_batch(
     return validated
 
 
-def _upload_file_to_pb(kb_name: str, filename: str, file_path: Path) -> None:
-    """Upload a single file to the PocketBase knowledge_bases record."""
-    try:
-        from deeptutor.services.pocketbase_client import get_pb_client
-
-        pb = get_pb_client()
-        records = pb.collection("knowledge_bases").get_full_list(
-            query_params={"filter": f'kb_name="{kb_name}"'}
-        )
-        if not records:
-            logger.debug(f"PocketBase KB record not found for '{kb_name}', skipping file upload")
-            return
-        with open(file_path, "rb") as fh:
-            pb.collection("knowledge_bases").update(
-                records[0].id,
-                body={"kb_name": kb_name},
-                files={"raw_files": (filename, fh)},
-            )
-        logger.debug(f"Uploaded '{filename}' to PocketBase KB '{kb_name}'")
-    except Exception as exc:
-        logger.debug(f"_upload_file_to_pb failed: {exc}")
-
-
 def _task_log(task_id: str, message: str, level: str = "info") -> None:
     manager = get_task_stream_manager()
     manager.ensure_task(task_id)
@@ -593,79 +533,9 @@ def _validate_registered_provider(raw_provider: str | None) -> str:
     Empty / legacy / unknown strings coerce to the default (so a stale config or
     a removed engine never selects a missing pipeline). Returning the real,
     canonical provider is what makes the per-KB lock meaningful: the upload route
-    compares the requested provider against the KB's bound provider, so asking to
-    add to a ``pageindex`` KB with ``llamaindex`` (or vice versa) is rejected.
+    compares the requested provider against the KB's bound provider.
     """
     return normalize_provider_name(raw_provider)
-
-
-def _assert_provider_ready(provider: str) -> None:
-    """Block creating/using a KB whose engine isn't ready.
-
-    PageIndex needs an API key; GraphRAG needs the optional package installed.
-    """
-    if provider == PAGEINDEX_PROVIDER:
-        from deeptutor.services.rag.pipelines.pageindex.config import is_pageindex_configured
-
-        if not is_pageindex_configured():
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "PageIndex API key is not configured. Add it under "
-                    "Knowledge → RAG pipeline settings before creating a PageIndex "
-                    "knowledge base."
-                ),
-            )
-
-    if provider == GRAPHRAG_PROVIDER:
-        from deeptutor.services.rag.pipelines.graphrag.config import is_graphrag_available
-
-        if not is_graphrag_available():
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "GraphRAG is not installed. Run "
-                    "`pip install 'deeptutor[graphrag]'` on the server before "
-                    "creating a GraphRAG knowledge base."
-                ),
-            )
-
-    if provider == LIGHTRAG_PROVIDER:
-        from deeptutor.services.rag.pipelines.lightrag.config import is_lightrag_available
-
-        if not is_lightrag_available():
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "LightRAG is not installed. Run "
-                    "`pip install 'deeptutor[rag-lightrag]'` on the server before "
-                    "creating a LightRAG knowledge base."
-                ),
-            )
-
-
-def _enforce_provider_formats(provider: str, files: list[UploadFile]) -> None:
-    """Reject files PageIndex's document endpoint does not accept, up front."""
-    if provider != PAGEINDEX_PROVIDER:
-        return
-    from deeptutor.services.rag.pipelines.pageindex.pipeline import SUPPORTED_EXTENSIONS
-
-    unsupported = [
-        f.filename
-        for f in files
-        if f.filename
-        and not f.filename.lower().endswith(".zip")
-        and Path(f.filename).suffix.lower() not in SUPPORTED_EXTENSIONS
-    ]
-    if unsupported:
-        supported = ", ".join(sorted(SUPPORTED_EXTENSIONS))
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"PageIndex knowledge bases accept: {supported}. "
-                f"Unsupported: {', '.join(unsupported[:5])}."
-            ),
-        )
 
 
 def _resolve_registered_kb_name(manager: KnowledgeBaseManager, kb_name: str | None) -> str:
@@ -1009,126 +879,6 @@ async def health_check():
         return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
 
 
-@router.get("/rag-providers")
-async def get_rag_providers():
-    """Get list of available RAG providers (with the active per-engine mode)."""
-    try:
-        from deeptutor.services.config import get_kb_config_service
-        from deeptutor.services.rag.service import RAGService
-
-        providers = RAGService.list_providers()
-        kb_config = get_kb_config_service()
-        for provider in providers:
-            modes = provider.get("modes") or []
-            if modes:
-                stored = kb_config.get_provider_mode(provider["id"])
-                if stored in modes:
-                    provider["default_mode"] = stored
-            # Whether an existing index for this engine can be linked in place
-            # (self-contained on disk). Drives the "link existing folder" UI.
-            provider["linkable"] = provider.get("id") in LINKABLE_PROVIDERS
-        return {"providers": providers}
-    except Exception as e:
-        logger.error(f"Error getting RAG providers: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-class ProviderModeUpdate(BaseModel):
-    """Set an engine's global default retrieval mode (from its engine card)."""
-
-    mode: str
-
-
-@router.put("/rag-providers/{provider}/mode")
-async def set_rag_provider_mode(provider: str, payload: ProviderModeUpdate):
-    """Persist the default retrieval mode for a mode-aware engine.
-
-    The mode must be one the engine supports; a KB's own ``search_mode`` still
-    overrides this per-KB default.
-    """
-    from deeptutor.services.config import get_kb_config_service
-    from deeptutor.services.rag.service import RAGService
-
-    entry = next((p for p in RAGService.list_providers() if p["id"] == provider), None)
-    modes = (entry or {}).get("modes") or []
-    if entry is None or not modes:
-        raise HTTPException(status_code=404, detail=f"No retrieval modes for engine '{provider}'.")
-
-    mode = (payload.mode or "").strip().lower()
-    if mode not in modes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid mode '{payload.mode}' for {provider}. Choose one of: {', '.join(modes)}.",
-        )
-
-    get_kb_config_service().set_provider_mode(provider, mode)
-    return {"provider": provider, "mode": mode}
-
-
-class PageIndexConfigUpdate(BaseModel):
-    # Tri-state api_key: omit/None keeps the stored key, "" clears it, any other
-    # value replaces it — so the masked UI never round-trips the real secret.
-    api_key: str | None = None
-    api_base_url: str | None = None
-
-
-def _pageindex_config_payload() -> dict:
-    """PageIndex pipeline settings for the UI, with the API key redacted."""
-    from deeptutor.services.config import get_runtime_settings_service
-
-    settings = get_runtime_settings_service().load_pageindex()
-    return {
-        "api_base_url": settings.get("api_base_url") or "",
-        "api_key_set": bool(settings.get("api_key")),
-        "configured": bool(settings.get("api_key")),
-    }
-
-
-@router.get("/rag-pipelines/pageindex/config")
-async def get_pageindex_pipeline_config():
-    """Read the PageIndex credential state (key redacted to a boolean)."""
-    try:
-        return _pageindex_config_payload()
-    except Exception as e:
-        logger.error(f"Error reading PageIndex config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.put("/rag-pipelines/pageindex/config")
-async def update_pageindex_pipeline_config(payload: PageIndexConfigUpdate):
-    """Persist the PageIndex API key / base URL for this user's account."""
-    try:
-        from deeptutor.services.config import get_runtime_settings_service
-        from deeptutor.services.rag.pipelines.pageindex.config import DEFAULT_API_BASE_URL
-
-        service = get_runtime_settings_service()
-        current = service.load_pageindex(include_process_overrides=False)
-
-        api_key = current.get("api_key", "")
-        if payload.api_key is not None:
-            api_key = payload.api_key.strip()
-
-        api_base_url = current.get("api_base_url") or DEFAULT_API_BASE_URL
-        if payload.api_base_url is not None and payload.api_base_url.strip():
-            api_base_url = payload.api_base_url.strip()
-
-        service.save_pageindex({"api_key": api_key, "api_base_url": api_base_url})
-
-        # The built-in pageindex MCP server derives its URL/Bearer header from
-        # these settings — resync connections so key changes apply immediately.
-        try:
-            from deeptutor.services.mcp import get_mcp_manager
-
-            await get_mcp_manager().reload()
-        except Exception:
-            logger.warning("MCP reload after PageIndex config change failed", exc_info=True)
-
-        return _pageindex_config_payload()
-    except Exception as e:
-        logger.error(f"Error updating PageIndex config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 class LlamaIndexConfigUpdate(BaseModel):
     """Partial update for the LlamaIndex engine knobs (omitted fields kept)."""
 
@@ -1169,197 +919,6 @@ async def update_llamaindex_pipeline_config(payload: LlamaIndexConfigUpdate):
         return service.save_llamaindex({**current, **updates})
     except Exception as e:
         logger.error(f"Error updating LlamaIndex config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-class GraphRagConfigUpdate(BaseModel):
-    """Partial update for GraphRAG query knobs (omitted fields kept)."""
-
-    response_type: str | None = None
-    community_level: int | None = None
-    dynamic_community_selection: bool | None = None
-
-
-@router.get("/rag-pipelines/graphrag/config")
-async def get_graphrag_pipeline_config():
-    """Read GraphRAG's query knobs (response style, community granularity)."""
-    try:
-        from deeptutor.services.config import get_runtime_settings_service
-
-        return get_runtime_settings_service().load_graphrag()
-    except Exception as e:
-        logger.error(f"Error reading GraphRAG config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.put("/rag-pipelines/graphrag/config")
-async def update_graphrag_pipeline_config(payload: GraphRagConfigUpdate):
-    """Persist GraphRAG's query knobs. Takes effect on the next query."""
-    try:
-        from deeptutor.services.config import get_runtime_settings_service
-
-        service = get_runtime_settings_service()
-        current = service.load_graphrag()
-        updates = payload.model_dump(exclude_none=True)
-        return service.save_graphrag({**current, **updates})
-    except Exception as e:
-        logger.error(f"Error updating GraphRAG config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-class LightRagConfigUpdate(BaseModel):
-    """Partial update for LightRAG query knobs (omitted fields kept)."""
-
-    top_k: int | None = None
-    response_type: str | None = None
-
-
-@router.get("/rag-pipelines/lightrag/config")
-async def get_lightrag_pipeline_config():
-    """Read LightRAG's query knobs (top_k, response style)."""
-    try:
-        from deeptutor.services.config import get_runtime_settings_service
-
-        return get_runtime_settings_service().load_lightrag()
-    except Exception as e:
-        logger.error(f"Error reading LightRAG config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.put("/rag-pipelines/lightrag/config")
-async def update_lightrag_pipeline_config(payload: LightRagConfigUpdate):
-    """Persist LightRAG's query knobs. Takes effect on the next query."""
-    try:
-        from deeptutor.services.config import get_runtime_settings_service
-
-        service = get_runtime_settings_service()
-        current = service.load_lightrag()
-        updates = payload.model_dump(exclude_none=True)
-        return service.save_lightrag({**current, **updates})
-    except Exception as e:
-        logger.error(f"Error updating LightRAG config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/rag-pipelines/{provider}/preflight")
-async def get_rag_pipeline_preflight(provider: str):
-    """Check whether ``provider`` can run in the current environment.
-
-    Returns ``{ok, checks:[{key,label,ok,detail,optional}]}`` — package
-    install, API key, and active model requirements per engine.
-    """
-    try:
-        from deeptutor.services.rag.preflight import engine_preflight
-
-        return engine_preflight(provider)
-    except Exception as e:
-        logger.error(f"Error running preflight for '{provider}': {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Model kinds an engine page is allowed to read/switch. ``vision`` is not a
-# catalog service (it rides on the active chat model), so it is intentionally
-# excluded here.
-_ENGINE_MODEL_KINDS = ("llm", "embedding")
-
-
-def _model_options_payload(kinds: list[str]) -> dict:
-    """Secret-free model options per kind for the engine page picker.
-
-    Exposes only ids / display labels / dimensions — never provider URLs or
-    API keys (those stay behind the admin-only catalog endpoint).
-    """
-    from deeptutor.services.config import get_model_catalog_service
-
-    catalog = get_model_catalog_service().load()
-    services = catalog.get("services", {})
-    out: dict = {}
-    for kind in kinds:
-        svc = services.get(kind) or {}
-        options = []
-        for profile in svc.get("profiles", []) or []:
-            pid = profile.get("id")
-            pname = profile.get("name") or pid
-            for model in profile.get("models", []) or []:
-                detail = ""
-                if kind == "embedding" and model.get("dimension"):
-                    detail = f"{model.get('dimension')}d"
-                options.append(
-                    {
-                        "profile_id": pid,
-                        "profile_name": pname,
-                        "model_id": model.get("id"),
-                        "label": model.get("name") or model.get("model") or model.get("id"),
-                        "model": model.get("model") or "",
-                        "detail": detail,
-                    }
-                )
-        out[kind] = {
-            "active": {
-                "profile_id": svc.get("active_profile_id"),
-                "model_id": svc.get("active_model_id"),
-            },
-            "options": options,
-        }
-    return out
-
-
-@router.get("/rag-pipelines/model-options")
-async def get_rag_model_options(kinds: str = "llm,embedding"):
-    """List configured models (secret-free) for the requested model kinds."""
-    try:
-        requested = [
-            k.strip() for k in kinds.split(",") if k.strip() in _ENGINE_MODEL_KINDS
-        ] or list(_ENGINE_MODEL_KINDS)
-        return _model_options_payload(requested)
-    except Exception as e:
-        logger.error(f"Error reading model options: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-class ActiveModelUpdate(BaseModel):
-    """Switch the globally-active model for a kind (llm / embedding)."""
-
-    kind: str
-    profile_id: str
-    model_id: str
-
-
-@router.put("/rag-pipelines/active-model")
-async def set_rag_active_model(payload: ActiveModelUpdate):
-    """Set the active model for an engine's required kind, applied immediately.
-
-    This is the same active selection the model catalog manages; switching it
-    here affects every engine that uses that kind (the active model is global).
-    """
-    if payload.kind not in _ENGINE_MODEL_KINDS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported model kind '{payload.kind}'. Choose one of: {', '.join(_ENGINE_MODEL_KINDS)}.",
-        )
-    try:
-        from deeptutor.services.config import get_model_catalog_service
-
-        service = get_model_catalog_service()
-        catalog = service.load()
-        svc = (catalog.get("services") or {}).get(payload.kind)
-        if not svc:
-            raise HTTPException(status_code=404, detail=f"No '{payload.kind}' models configured.")
-        profile = next(
-            (p for p in svc.get("profiles", []) if p.get("id") == payload.profile_id), None
-        )
-        if profile is None:
-            raise HTTPException(status_code=400, detail="Unknown profile for this kind.")
-        if not any(m.get("id") == payload.model_id for m in profile.get("models", [])):
-            raise HTTPException(status_code=400, detail="Unknown model for this profile.")
-        svc["active_profile_id"] = payload.profile_id
-        svc["active_model_id"] = payload.model_id
-        service.apply(catalog)
-        return _model_options_payload([payload.kind])[payload.kind]
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error setting active model: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1614,165 +1173,6 @@ async def connect_linked_folder_route(payload: ConnectFolderRequest):
     }
 
 
-class ProbeLightRagServerRequest(BaseModel):
-    server_url: str
-    api_key: str = ""
-
-
-class ConnectLightRagServerRequest(BaseModel):
-    name: str
-    server_url: str
-    api_key: str = ""
-    search_mode: str = ""
-
-
-@router.post("/probe-lightrag-server")
-async def probe_lightrag_server_route(payload: ProbeLightRagServerRequest):
-    """Test-connect to an external LightRAG server before binding a KB to it.
-
-    Returns the verdict (reachable? is it a LightRAG server? API key accepted?)
-    so the UI can confirm before any registration happens. Creates nothing.
-    """
-    from deeptutor.services.rag.pipelines.lightrag_server.probe import probe_server
-
-    server_url = (payload.server_url or "").strip()
-    if not server_url:
-        raise HTTPException(status_code=400, detail="server_url is required.")
-    result = await probe_server(server_url, payload.api_key or "")
-    return result.to_dict()
-
-
-@router.post("/connect-lightrag-server")
-async def connect_lightrag_server_route(payload: ConnectLightRagServerRequest):
-    """Connect an external LightRAG server as a retrieval-only knowledge base.
-
-    Re-probes server-side (never trusts the client's verdict), then registers a
-    pointer (``type: lightrag_server``). Retrieval is offloaded to the server's
-    ``/query`` endpoint — no copy, no local index.
-    """
-    from deeptutor.services.rag.pipelines.lightrag_server.config import SUPPORTED_MODES
-    from deeptutor.services.rag.pipelines.lightrag_server.probe import probe_server
-
-    name = (payload.name or "").strip()
-    server_url = (payload.server_url or "").strip()
-    if not name or not server_url:
-        raise HTTPException(status_code=400, detail="Both name and server_url are required.")
-
-    result = await probe_server(server_url, payload.api_key or "")
-    if not result.ok:
-        raise HTTPException(
-            status_code=400, detail=result.error or "Could not connect to the LightRAG server."
-        )
-
-    search_mode = (payload.search_mode or "").strip().lower()
-    if search_mode and search_mode not in SUPPORTED_MODES:
-        search_mode = ""
-
-    try:
-        manager = get_kb_manager()
-        entry = manager.register_lightrag_server_kb(
-            name,
-            result.base_url,
-            api_key=payload.api_key or "",
-            search_mode=search_mode,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error connecting LightRAG server: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-    return {
-        "status": "connected",
-        "name": name,
-        "server_url": entry["server_url"],
-        "rag_provider": entry["rag_provider"],
-    }
-
-
-class ProbeImaRequest(BaseModel):
-    client_id: str
-    api_key: str
-    knowledge_base_id: str
-
-
-class ConnectImaRequest(BaseModel):
-    name: str
-    client_id: str
-    api_key: str
-    knowledge_base_id: str
-
-
-@router.post("/probe-ima")
-async def probe_ima_route(payload: ProbeImaRequest):
-    """Test-connect to a Tencent IMA knowledge base before binding a KB to it.
-
-    Returns the verdict (credentials accepted? does the library id resolve, and
-    what is it called?) so the UI can confirm before any registration happens.
-    Creates nothing.
-    """
-    from deeptutor.services.rag.pipelines.ima.probe import probe_knowledge_base
-
-    result = await probe_knowledge_base(
-        payload.client_id,
-        payload.api_key,
-        payload.knowledge_base_id,
-    )
-    return result.to_dict()
-
-
-@router.post("/connect-ima")
-async def connect_ima_route(payload: ConnectImaRequest):
-    """Connect a Tencent IMA knowledge base as a retrieval-only knowledge base.
-
-    Re-probes server-side (never trusts the client's verdict), then registers a
-    pointer (``type: ima``). Retrieval is offloaded to IMA's ``search_knowledge``
-    OpenAPI — no copy, no local index.
-    """
-    from deeptutor.services.rag.pipelines.ima.probe import probe_knowledge_base
-
-    name = (payload.name or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Knowledge base name is required.")
-
-    result = await probe_knowledge_base(
-        payload.client_id,
-        payload.api_key,
-        payload.knowledge_base_id,
-    )
-    if not result.ok:
-        raise HTTPException(
-            status_code=400,
-            detail=result.error or "Could not connect to the IMA knowledge base.",
-        )
-
-    try:
-        manager = get_kb_manager()
-        entry = manager.register_ima_kb(
-            name,
-            payload.client_id,
-            payload.api_key,
-            payload.knowledge_base_id,
-            description=result.description or "",
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error connecting IMA knowledge base: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-    return {
-        "status": "connected",
-        "name": name,
-        "knowledge_base_id": entry["knowledge_base_id"],
-        "rag_provider": entry["rag_provider"],
-    }
-
-
 @router.get("/list", response_model=list[KnowledgeBaseInfo])
 async def list_knowledge_bases():
     """List all available knowledge bases with their details."""
@@ -1782,7 +1182,7 @@ async def list_knowledge_bases():
         default_name = manager.get_default(available_names=kb_names)
         access_items = list_visible_kb_access()
         access_by_id = {str(item.get("id") or ""): item for item in access_items}
-        own_prefix = "admin:kb:" if get_current_user().is_admin else "user:kb:"
+        own_prefix = "local:kb:"
 
         logger.debug(f"Found {len(kb_names)} knowledge bases: {kb_names}")
 
@@ -1807,7 +1207,7 @@ async def list_knowledge_bases():
                         path=info.get("path"),
                         status=info.get("status"),
                         progress=info.get("progress"),
-                        source="admin" if get_current_user().is_admin else "user",
+                        source="local",
                         assigned=False,
                         read_only=False,
                         provenance_label=access_by_id.get(f"{own_prefix}{info['name']}", {}).get(
@@ -1843,7 +1243,7 @@ async def list_knowledge_bases():
                                 path=str(kb_dir),
                                 status="error",
                                 progress=fallback_progress,
-                                source="admin" if get_current_user().is_admin else "user",
+                                source="local",
                             )
                         )
                 except Exception as fallback_err:
@@ -1860,82 +1260,6 @@ async def list_knowledge_bases():
             )
 
         logger.debug(f"Returning {len(result)} knowledge bases")
-        if not get_current_user().is_admin:
-            assigned_snapshots: dict[str, str | None] = {}
-            own_ids = {item.id for item in result}
-            for access in access_items:
-                if access.get("source") != "admin" or access.get("id") in own_ids:
-                    continue
-                if not access.get("available", True):
-                    result.append(
-                        KnowledgeBaseInfo(
-                            id=str(access.get("id") or ""),
-                            name=str(access.get("name") or ""),
-                            is_default=False,
-                            statistics={},
-                            metadata={},
-                            path=None,
-                            status="unavailable",
-                            progress=None,
-                            source="admin",
-                            assigned=True,
-                            read_only=True,
-                            provenance_label=str(access.get("provenance_label") or ""),
-                            available=False,
-                        )
-                    )
-                    continue
-                resource = resolve_kb(str(access.get("id") or access.get("name") or ""))
-                assigned_manager = manager_for_resource(resource)
-                try:
-                    manager_key = str(assigned_manager.base_dir.resolve())
-                    if manager_key not in assigned_snapshots:
-                        assigned_names = assigned_manager.list_knowledge_bases()
-                        assigned_snapshots[manager_key] = assigned_manager.get_default(
-                            available_names=assigned_names
-                        )
-                    info = assigned_manager.get_info(
-                        resource.name,
-                        refresh_config=False,
-                        default_name=assigned_snapshots[manager_key],
-                    )
-                    result.append(
-                        KnowledgeBaseInfo(
-                            id=resource.id,
-                            name=info["name"],
-                            is_default=False,
-                            statistics=info.get("statistics", {}),
-                            metadata=info.get("metadata"),
-                            path=None,
-                            status=info.get("status"),
-                            progress=info.get("progress"),
-                            source="admin",
-                            assigned=True,
-                            read_only=True,
-                            provenance_label=str(access.get("provenance_label") or ""),
-                        )
-                    )
-                except Exception as exc:
-                    error_msg = f"Error getting assigned KB '{resource.name}': {exc}"
-                    result.append(
-                        KnowledgeBaseInfo(
-                            id=resource.id,
-                            name=resource.name,
-                            is_default=False,
-                            statistics={},
-                            metadata={"name": resource.name, "last_error": error_msg},
-                            status="error",
-                            progress={
-                                "stage": "error",
-                                "message": "Failed to load assigned knowledge base info.",
-                                "error": error_msg,
-                            },
-                            source="admin",
-                            assigned=True,
-                            read_only=True,
-                            provenance_label=str(access.get("provenance_label") or ""),
-                        )
-                    )
         return result
     except HTTPException:
         raise
@@ -2195,7 +1519,6 @@ async def upload_files(
     kb_name: str,
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
-    rag_provider: str = Form(None),
     rel_paths: list[str] = Form(None),
 ):
     """Upload files to a knowledge base and process them in background."""
@@ -2205,25 +1528,11 @@ async def upload_files(
         raw_dir = kb_path / "raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
 
-        requested_provider = None
-        if rag_provider is not None and str(rag_provider).strip():
-            requested_provider = _validate_registered_provider(rag_provider)
-
         kb_entry = _load_kb_entry_or_404(manager, kb_name)
         _assert_kb_writable_or_409(kb_name, kb_entry)
         kb_provider = _validate_registered_provider(
             kb_entry.get("rag_provider") or DEFAULT_PROVIDER
         )
-        if requested_provider and requested_provider != kb_provider:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Requested provider '{requested_provider}' does not match KB provider '{kb_provider}'. "
-                    "A knowledge base is locked to the engine it was created with."
-                ),
-            )
-        _assert_provider_ready(kb_provider)
-        _enforce_provider_formats(kb_provider, files)
         allowed_extensions = FileTypeRouter.get_supported_extensions()
         # ``.zip`` is accepted as an upload container; its members are
         # validated against ``allowed_extensions`` during extraction and the
@@ -2274,7 +1583,6 @@ async def create_knowledge_base(
     background_tasks: BackgroundTasks,
     name: str = Form(...),
     files: list[UploadFile] = File(...),
-    rag_provider: str = Form(DEFAULT_PROVIDER),
     rel_paths: list[str] = Form(None),
 ):
     """Create a new knowledge base and initialize it with files."""
@@ -2289,9 +1597,7 @@ async def create_knowledge_base(
         if name in manager.list_knowledge_bases():
             raise HTTPException(status_code=400, detail=f"Knowledge base '{name}' already exists")
 
-        rag_provider = _validate_registered_provider(rag_provider)
-        _assert_provider_ready(rag_provider)
-        _enforce_provider_formats(rag_provider, files)
+        rag_provider = DEFAULT_PROVIDER
         allowed_extensions = FileTypeRouter.get_supported_extensions()
         _validate_upload_batch(files, allowed_extensions=allowed_extensions, rel_paths=rel_paths)
 
@@ -2410,7 +1716,7 @@ async def run_reindex_task(kb_name: str, base_dir: str, task_id: str, signature_
             from deeptutor.services.rag.service import RAGService
 
             # provider=None → RAGService resolves the KB's DeepTutor-bound
-            # engine, so re-indexing a PageIndex/LightRAG/GraphRAG KB stays on
+            # engine, so re-indexing a non-default KB stays on
             # that provider rather than forcing the default pipeline.
             rag_service = RAGService(kb_base_dir=str(base_path), provider=None)
 
@@ -2527,7 +1833,6 @@ async def reindex_knowledge_base(
         kb_provider = _validate_registered_provider(
             kb_entry.get("rag_provider") or DEFAULT_PROVIDER
         )
-        _assert_provider_ready(kb_provider)
 
         kb_dir = kb_base_dir / kb_name
         signature_hash = kb_provider
@@ -2657,13 +1962,6 @@ async def clear_progress(kb_name: str):
 @router.websocket("/{kb_name}/progress/ws")
 async def websocket_progress(websocket: WebSocket, kb_name: str):
     """WebSocket endpoint for real-time progress updates"""
-    from deeptutor.api.routers.auth import ws_auth_failed, ws_require_auth
-    from deeptutor.multi_user.context import reset_current_user
-
-    user_token = await ws_require_auth(websocket)
-    if user_token is ws_auth_failed:
-        return
-
     await websocket.accept()
 
     broadcaster = ProgressBroadcaster.get_instance()
@@ -2793,11 +2091,6 @@ async def websocket_progress(websocket: WebSocket, kb_name: str):
             await websocket.close()
         except Exception:
             pass
-        if user_token is not None:
-            try:
-                reset_current_user(user_token)
-            except Exception:
-                pass
 
 
 @router.post("/{kb_name}/link-folder", response_model=LinkedFolderInfo)

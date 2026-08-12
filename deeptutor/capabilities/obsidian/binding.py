@@ -30,7 +30,7 @@ def vault_for_turn(context: UnifiedContext) -> dict[str, str] | None:
 
 
 def _resolve(context: UnifiedContext) -> dict[str, str] | None:
-    from deeptutor.multi_user.knowledge_access import resolve_kb_metadata
+    from deeptutor.services.local_workspace import resolve_kb_metadata
 
     for ref in context.knowledge_bases or []:
         ref = str(ref).strip()
@@ -52,7 +52,7 @@ def obsidian_vault_refs(context: UnifiedContext) -> set[str]:
     but all vault refs are reported here so the chat pipeline can exclude them
     from the ``rag`` surface — ``rag`` has no index for a live vault (issue #650).
     """
-    from deeptutor.multi_user.knowledge_access import resolve_kb_metadata
+    from deeptutor.services.local_workspace import resolve_kb_metadata
 
     refs: set[str] = set()
     for ref in context.knowledge_bases or []:

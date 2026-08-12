@@ -128,7 +128,6 @@ class ClaudeCodeBackend(SubagentBackend):
         session_id: str | None = None,
         config: BackendConfig | None = None,
         images: list[str] | None = None,
-        partner_id: str | None = None,  # noqa: ARG002 — partner-only; ignored here
     ) -> ConsultResult:
         config = config or BackendConfig()
         cmd = self._build_command(question, session_id=session_id, config=config, images=images)

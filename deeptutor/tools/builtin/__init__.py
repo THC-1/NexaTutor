@@ -13,14 +13,7 @@ from deeptutor.capabilities.solve import SOLVE_TOOL_TYPES
 from deeptutor.capabilities.subagent import SUBAGENT_TOOL_TYPES
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from deeptutor.knowledge.manifest import KB_FILES_DEFAULT_LIMIT, KB_FILES_MAX_LIMIT
-from deeptutor.tools.exec_tool import ExecTool
-from deeptutor.tools.media_gen_tool import ImagegenTool, VideogenTool
-from deeptutor.tools.partner_memory import (
-    PARTNER_BUILTIN_TOOL_NAMES,
-    PartnerMemorizeTool,
-    PartnerReadTool,
-    PartnerSearchTool,
-)
+from deeptutor.tools.media_gen_tool import ImagegenTool
 from deeptutor.tools.prompting import load_prompt_hints
 
 logger = logging.getLogger(__name__)
@@ -40,47 +33,12 @@ class _PromptHintsMixin:
         return load_prompt_hints(self.name, language=language)
 
 
-class BrainstormTool(_PromptHintsMixin, BaseTool):
-    def get_definition(self) -> ToolDefinition:
-        return ToolDefinition(
-            name="brainstorm",
-            description="Broadly explore multiple possibilities for a topic and give a short rationale for each.",
-            parameters=[
-                ToolParameter(
-                    name="topic",
-                    type="string",
-                    description="The topic, goal, or problem to brainstorm about.",
-                ),
-                ToolParameter(
-                    name="context",
-                    type="string",
-                    description="Optional supporting context, constraints, or background.",
-                    required=False,
-                ),
-            ],
-        )
-
-    async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.brainstorm import brainstorm
-
-        result = await brainstorm(
-            topic=kwargs.get("topic", ""),
-            context=kwargs.get("context", ""),
-            api_key=kwargs.get("api_key"),
-            base_url=kwargs.get("base_url"),
-            model=kwargs.get("model"),
-            max_tokens=kwargs.get("max_tokens"),
-            temperature=kwargs.get("temperature"),
-        )
-        return ToolResult(content=result.get("answer", ""), metadata=result)
-
-
 def _rag_sources(result: dict[str, Any], *, query: str, kb_name: str) -> list[dict[str, Any]]:
     """Citations for one ``rag`` call, from the retrieval's own provenance.
 
     Every pipeline normalises what it retrieved into ``result["sources"]``
-    (``{title, content, source, page, chunk_id, score}`` — see the GraphRAG and
-    LightRAG-server pipelines). Forward those so a grounded claim is traceable
+    (``{title, content, source, page, chunk_id, score}`` — see the remote and
+    remote pipelines). Forward those so a grounded claim is traceable
     to the chunk / entity / report behind it; without this the tool reported
     only an echo of its own query (issue #694). ``type``/``kb_name`` are kept on
     every entry so consumers that key on them still work, and an engine that
@@ -188,7 +146,7 @@ class KbFilesTool(_PromptHintsMixin, BaseTool):
 
     async def execute(self, **kwargs: Any) -> ToolResult:
         from deeptutor.knowledge.manifest import render_manifest_report
-        from deeptutor.multi_user.knowledge_access import resolve_kb_manifest
+        from deeptutor.services.local_workspace import resolve_kb_manifest
 
         kb_name = str(kwargs.get("kb_name") or "").strip()
         if not kb_name:
@@ -272,32 +230,21 @@ class WebSearchTool(_PromptHintsMixin, BaseTool):
 
 
 class CodeExecutionTool(_PromptHintsMixin, BaseTool):
-    """Compile and run a code snippet inside the execution sandbox.
+    """Run explicitly enabled Python through a SYSTEM-isolated argv backend."""
 
-    A typed front-end over the same sandbox ``exec`` uses: the model passes
-    ready-to-run source as ``code`` + a ``language``; we write it into the
-    turn's workspace, build the per-language compile/run command, and execute
-    it through :mod:`deeptutor.services.sandbox`. No second LLM call, and the
-    same OS-level isolation + quota as ``exec`` — so it inherits exec's gating
-    (unavailable when no sandbox backend is configured).
-    """
-
-    # language -> (source filename, shell command template). ``{src}`` is the
-    # source file, ``{bin}`` the compiled binary, ``{stdin}`` an optional
-    # ``< file`` redirect (empty when no stdin is supplied). Commands run with
-    # the workspace subdir as cwd, so plain relative names are enough.
-    _LANGUAGES: dict[str, tuple[str, str]] = {
-        "python": ("main.py", "python3 {src} {stdin}"),
-        "c": ("main.c", "cc {src} -O2 -o prog && ./prog {stdin}"),
-        "cpp": ("main.cpp", "c++ -std=c++17 -O2 {src} -o prog && ./prog {stdin}"),
-    }
-    _LANGUAGE_ALIASES: dict[str, str] = {
-        "py": "python",
-        "python3": "python",
-        "c++": "cpp",
-        "cxx": "cpp",
-        "cc": "c",
-    }
+    _ALLOWED_IMPORT_ROOTS = frozenset(
+        {
+            "collections", "csv", "datetime", "decimal", "docx", "fractions",
+            "functools", "itertools", "json", "math", "matplotlib", "numpy",
+            "openpyxl", "pandas", "pathlib", "PIL", "pptx", "random", "re",
+            "reportlab", "scipy", "seaborn", "statistics", "string", "sympy",
+            "typing",
+        }
+    )
+    _BLOCKED_CALLS = frozenset({"eval", "exec", "compile", "__import__"})
+    _BLOCKED_ATTRIBUTES = frozenset(
+        {"system", "popen", "spawnl", "spawnle", "spawnlp", "spawnv", "spawnve"}
+    )
 
     def get_definition(self) -> ToolDefinition:
         return ToolDefinition(
@@ -305,7 +252,7 @@ class CodeExecutionTool(_PromptHintsMixin, BaseTool):
             description=(
                 "Run a code snippet in an isolated sandbox and return its "
                 "stdout/stderr. Pass complete, ready-to-run source in `code` "
-                "and pick `language` (python, c, or cpp). Use for calculation, "
+                "and pick `language` (python only). Use for calculation, "
                 "algorithm checking, and numerical verification — print results "
                 "to stdout. Not a substitute for explaining your reasoning."
             ),
@@ -313,18 +260,13 @@ class CodeExecutionTool(_PromptHintsMixin, BaseTool):
                 ToolParameter(
                     name="language",
                     type="string",
-                    description="Source language: 'python', 'c', or 'cpp'.",
+                    description="Source language: 'python'.",
+                    enum=["python"],
                 ),
                 ToolParameter(
                     name="code",
                     type="string",
                     description="The complete source code to compile/run.",
-                ),
-                ToolParameter(
-                    name="stdin",
-                    type="string",
-                    description="Optional text piped to the program's stdin.",
-                    required=False,
                 ),
                 ToolParameter(
                     name="timeout",
@@ -338,11 +280,36 @@ class CodeExecutionTool(_PromptHintsMixin, BaseTool):
 
     def _resolve_language(self, raw: Any) -> str:
         name = str(raw or "").strip().lower()
-        name = self._LANGUAGE_ALIASES.get(name, name)
-        if name not in self._LANGUAGES:
-            supported = ", ".join(sorted(self._LANGUAGES))
-            raise ValueError(f"Unsupported language {raw!r}; supported: {supported}.")
-        return name
+        if name in {"py", "python3"}:
+            name = "python"
+        if name != "python":
+            raise ValueError(f"Unsupported language {raw!r}; supported: python.")
+        return "python"
+
+    def _validate_python(self, code: str) -> None:
+        import ast
+
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as exc:
+            raise ValueError(f"Invalid Python: {exc.msg}") from exc
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names = (
+                    [alias.name for alias in node.names]
+                    if isinstance(node, ast.Import)
+                    else [str(node.module or "")]
+                )
+                for name in names:
+                    root = name.split(".", 1)[0]
+                    if root not in self._ALLOWED_IMPORT_ROOTS:
+                        raise ValueError(f"Import {root!r} is not allowed.")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id in self._BLOCKED_CALLS:
+                    raise ValueError(f"Call {node.func.id!r} is not allowed.")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr in self._BLOCKED_ATTRIBUTES:
+                    raise ValueError(f"Call attribute {node.func.attr!r} is not allowed.")
 
     async def execute(self, **kwargs: Any) -> ToolResult:
         from pathlib import Path
@@ -362,7 +329,8 @@ class CodeExecutionTool(_PromptHintsMixin, BaseTool):
         if not code:
             raise ValueError("code_execution requires non-empty 'code'.")
         language = self._resolve_language(kwargs.get("language"))
-        source_name, command_template = self._LANGUAGES[language]
+        self._validate_python(code)
+        source_name = "main.py"
 
         try:
             timeout = int(kwargs.get("timeout") or 30)
@@ -370,8 +338,17 @@ class CodeExecutionTool(_PromptHintsMixin, BaseTool):
             timeout = 30
         timeout = max(1, min(timeout, 300))
 
+        service = get_sandbox_service()
+        from deeptutor.services.sandbox import IsolationLevel
+
+        if await service.isolation_level() is not IsolationLevel.SYSTEM:
+            return ToolResult(
+                content="Code execution requires a healthy system-isolated runner.",
+                success=False,
+            )
+
         # ``_sandbox_*`` kwargs are injected server-side by the pipeline; the
-        # LLM never supplies them. Mirror ExecTool's contract.
+        # LLM never supplies these private sandbox arguments.
         user_id = str(kwargs.get("_sandbox_user_id") or "anonymous")
         workdir = str(kwargs.get("_sandbox_workdir") or "").strip()
         mounts = tuple(kwargs.get("_sandbox_mounts") or ())
@@ -386,29 +363,23 @@ class CodeExecutionTool(_PromptHintsMixin, BaseTool):
         # Each call gets its own subdir so concurrent runs don't clobber one
         # another's source / binary. The subdir lives inside the mounted
         # workspace, so the sandbox sees it at the same path.
-        run_dir = Path(workdir) / f"{language}_{_unique_run_token()}"
+        run_dir = Path(workdir) / f"python_{_unique_run_token()}"
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / source_name).write_text(code, encoding="utf-8")
 
-        stdin_redirect = ""
-        if str(kwargs.get("stdin") or "") != "":
-            (run_dir / "stdin.txt").write_text(str(kwargs["stdin"]), encoding="utf-8")
-            stdin_redirect = "< stdin.txt"
-        command = command_template.format(src=source_name, stdin=stdin_redirect).strip()
-
         limits = ResourceLimits(timeout_s=timeout)
-        request = ExecRequest(
-            command=command,
+        request = ExecRequest.of_argv(
+            ("python3", "-I", source_name),
             workdir=str(run_dir),
             mounts=mounts,
             limits=limits,
         )
-        result = await get_sandbox_service().run(request, user_id=user_id)
+        result = await service.run(request, user_id=user_id)
 
         # The source file, compiled binary, and stdin scratch are inputs we
         # wrote ourselves — exclude them so only program-generated files
         # surface as artifacts.
-        meta_files = {source_name, "prog", "stdin.txt"}
+        meta_files = {source_name}
         artifacts = [
             artifact
             for artifact in collect_public_artifacts(str(run_dir))
@@ -437,7 +408,7 @@ class CodeExecutionTool(_PromptHintsMixin, BaseTool):
             metadata={
                 "language": language,
                 "code": code,
-                "command": command,
+                "argv": list(request.argv),
                 "exit_code": result.exit_code,
                 "timed_out": result.timed_out,
                 "sandbox_error": result.error,
@@ -445,44 +416,6 @@ class CodeExecutionTool(_PromptHintsMixin, BaseTool):
                 "artifacts": artifact_rows,
             },
         )
-
-
-class ReasonTool(_PromptHintsMixin, BaseTool):
-    def get_definition(self) -> ToolDefinition:
-        return ToolDefinition(
-            name="reason",
-            description=(
-                "Perform deep reasoning on a complex sub-problem using a dedicated LLM call. "
-                "Use when the current context is insufficient for a confident answer."
-            ),
-            parameters=[
-                ToolParameter(
-                    name="query",
-                    type="string",
-                    description="The sub-problem to reason about.",
-                ),
-                ToolParameter(
-                    name="context",
-                    type="string",
-                    description="Supporting context for reasoning.",
-                    required=False,
-                ),
-            ],
-        )
-
-    async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.reason import reason
-
-        result = await reason(
-            query=kwargs.get("query", ""),
-            context=kwargs.get("context", ""),
-            api_key=kwargs.get("api_key"),
-            base_url=kwargs.get("base_url"),
-            model=kwargs.get("model"),
-            max_tokens=kwargs.get("max_tokens"),
-            temperature=kwargs.get("temperature"),
-        )
-        return ToolResult(content=result.get("answer", ""), metadata=result)
 
 
 class PaperSearchToolWrapper(_PromptHintsMixin, BaseTool):
@@ -562,115 +495,6 @@ class PaperSearchToolWrapper(_PromptHintsMixin, BaseTool):
                 for paper in papers
             ],
             metadata={"provider": "arxiv", "papers": papers},
-        )
-
-
-class GeoGebraAnalysisTool(_PromptHintsMixin, BaseTool):
-    """Analyze a math-problem image and generate GeoGebra visualization commands."""
-
-    def get_definition(self) -> ToolDefinition:
-        return ToolDefinition(
-            name="geogebra_analysis",
-            description=(
-                "Analyze a math problem image, detect geometric elements, "
-                "and generate validated GeoGebra commands for visualization. "
-                "Requires an attached image."
-            ),
-            parameters=[
-                ToolParameter(
-                    name="question",
-                    type="string",
-                    description="The math problem text to analyze.",
-                ),
-                ToolParameter(
-                    name="image_base64",
-                    type="string",
-                    description="Base64-encoded image (data URI or raw). Injected from attachments when called via function-calling.",
-                    required=False,
-                    default="",
-                ),
-            ],
-        )
-
-    async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.agents.vision_solver.vision_solver_agent import VisionSolverAgent
-        from deeptutor.services.llm.config import get_llm_config
-
-        question = kwargs.get("question", "")
-        image_base64 = kwargs.get("image_base64", "")
-        # language is server-injected from the user's session setting by the
-        # chat pipeline; never accept an LLM-provided override.
-        language = kwargs.get("language") or "zh"
-
-        if not image_base64:
-            return ToolResult(
-                content="No image provided. This tool requires an image attachment.",
-                success=False,
-            )
-
-        # VisionSolverAgent expects a fully-qualified ``data:image/<fmt>;base64,…``
-        # URI for the OpenAI image_url shape. The chat pipeline injects this
-        # form already, but defensively normalize for any other caller (or a
-        # hallucinated kwarg) so we don't silently fall through 4 empty stages.
-        if not image_base64.startswith("data:"):
-            image_base64 = f"data:image/png;base64,{image_base64}"
-
-        llm_config = get_llm_config()
-        agent = VisionSolverAgent(
-            api_key=llm_config.api_key,
-            base_url=llm_config.base_url,
-            language=language,
-        )
-
-        try:
-            result = await agent.process(
-                question_text=question,
-                image_base64=image_base64,
-            )
-        except Exception as exc:
-            logger.exception("GeoGebra analysis pipeline failed")
-            return ToolResult(content=f"Analysis pipeline error: {exc}", success=False)
-
-        if not result.get("has_image"):
-            return ToolResult(content="No image was processed.", success=False)
-
-        final_commands = result.get("final_ggb_commands", [])
-        ggb_block = agent.format_ggb_block(final_commands)
-
-        analysis = result.get("analysis_output") or {}
-        constraints = analysis.get("constraints", [])
-        relations = analysis.get("geometric_relations", [])
-        summary_parts: list[str] = []
-        if constraints:
-            summary_parts.append(
-                f"Constraints ({len(constraints)}): {json.dumps(constraints[:5], ensure_ascii=False)}"
-            )
-        if relations:
-            relation_descriptions = [
-                relation.get("description", str(relation))
-                if isinstance(relation, dict)
-                else str(relation)
-                for relation in relations[:5]
-            ]
-            summary_parts.append(
-                f"Relations ({len(relations)}): {json.dumps(relation_descriptions, ensure_ascii=False)}"
-            )
-
-        content_parts: list[str] = []
-        if summary_parts:
-            content_parts.append("\n".join(summary_parts))
-        content_parts.append(ggb_block or "(No GeoGebra commands generated.)")
-
-        return ToolResult(
-            content="\n\n".join(content_parts),
-            metadata={
-                "has_image": True,
-                "commands_count": len(final_commands),
-                "final_ggb_commands": final_commands,
-                "image_is_reference": result.get("image_is_reference", False),
-                "constraints_count": len(constraints),
-                "relations_count": len(relations),
-            },
         )
 
 
@@ -1113,69 +937,6 @@ class WriteNoteTool(_PromptHintsMixin, BaseTool):
         )
 
 
-class GithubTool(_PromptHintsMixin, BaseTool):
-    """Read-only GitHub queries via `gh`. Always auto-mounted; the
-    underlying call gracefully reports "gh unavailable" when the CLI
-    isn't installed on the server."""
-
-    _ALLOWED_QUERY_TYPES = ("pr", "issue", "run", "repo", "api")
-
-    def get_definition(self) -> ToolDefinition:
-        return ToolDefinition(
-            name="github",
-            description=(
-                "Read-only queries against GitHub PRs / issues / repos / "
-                "CI runs via the gh CLI. This tool cannot write — no "
-                "comments, no closes, no merges."
-            ),
-            parameters=[
-                ToolParameter(
-                    name="query_type",
-                    type="string",
-                    description=("One of 'pr', 'issue', 'run', 'repo', 'api'."),
-                    enum=list(_ALLOWED_QUERY_TYPES := ("pr", "issue", "run", "repo", "api")),
-                ),
-                ToolParameter(
-                    name="target",
-                    type="string",
-                    description=(
-                        "owner/repo[#number] or full URL for pr/issue; "
-                        "owner/repo for run/repo; gh-api relative path "
-                        "for api."
-                    ),
-                ),
-            ],
-        )
-
-    async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.github_query import run_github_query
-
-        outcome = await run_github_query(
-            query_type=str(kwargs.get("query_type") or ""),
-            target=str(kwargs.get("target") or ""),
-        )
-        if not outcome.ok:
-            return ToolResult(
-                content=outcome.error,
-                success=False,
-                metadata={"query_type": outcome.query_type, "target": outcome.target},
-            )
-        return ToolResult(
-            content=outcome.output,
-            sources=[
-                {
-                    "type": "github",
-                    "query_type": outcome.query_type,
-                    "target": outcome.target,
-                }
-            ],
-            metadata={
-                "query_type": outcome.query_type,
-                "target": outcome.target,
-            },
-        )
-
-
 class AskUserTool(_PromptHintsMixin, BaseTool):
     """Pause the turn mid-loop to ask the user a clarifying question.
 
@@ -1372,18 +1133,6 @@ class ReadSkillTool(_PromptHintsMixin, BaseTool):
             raise ValueError("read_skill requires a skill name.")
 
         services: list[SkillService] = [get_skill_service()]
-        try:
-            from deeptutor.multi_user.context import get_current_user
-            from deeptutor.multi_user.paths import get_admin_path_service
-            from deeptutor.multi_user.skill_access import assigned_skill_ids
-
-            user = get_current_user()
-            if not user.is_admin and name in assigned_skill_ids(user.id):
-                services.append(
-                    SkillService(root=get_admin_path_service().get_workspace_dir() / "skills")
-                )
-        except Exception:
-            logger.debug("read_skill: assigned-skill scope unavailable", exc_info=True)
 
         for service in services:
             try:
@@ -1404,188 +1153,23 @@ class ReadSkillTool(_PromptHintsMixin, BaseTool):
         )
 
 
-class LoadToolsTool(_PromptHintsMixin, BaseTool):
-    """Load deferred (Extended) tools' schemas into the current session.
-
-    The ``_tool_loader`` kwarg is injected server-side by the chat pipeline
-    (a per-turn :class:`DeferredToolLoader`); the LLM only supplies
-    ``names``.
-    """
-
-    def get_definition(self) -> ToolDefinition:
-        return ToolDefinition(
-            name="load_tools",
-            description=(
-                "Load one or more Extended Tools (listed in the Extended "
-                "Tools section) so they become callable. Call this BEFORE "
-                "using any extended tool; loaded tools stay available for "
-                "the rest of the session."
-            ),
-            parameters=[
-                ToolParameter(
-                    name="names",
-                    type="array",
-                    description=(
-                        "Exact tool names to load, as listed in the Extended Tools section."
-                    ),
-                    items={"type": "string"},
-                ),
-            ],
-        )
-
-    async def execute(self, **kwargs: Any) -> ToolResult:
-        loader = kwargs.get("_tool_loader")
-        names = kwargs.get("names")
-        if loader is None:
-            return ToolResult(
-                content="(load_tools is unavailable in this context)",
-                success=False,
-            )
-        if not isinstance(names, list) or not names:
-            raise ValueError("load_tools requires a non-empty `names` array.")
-        outcome = loader.load(names)
-        parts: list[str] = []
-        if outcome["loaded"]:
-            parts.append("Loaded (now callable): " + ", ".join(outcome["loaded"]))
-        if outcome["already_loaded"]:
-            parts.append("Already loaded: " + ", ".join(outcome["already_loaded"]))
-        if outcome["unknown"]:
-            parts.append(
-                "Unknown: "
-                + ", ".join(outcome["unknown"])
-                + " (use exact names from the Extended Tools section)"
-            )
-        return ToolResult(
-            content="\n".join(parts) or "(nothing to load)",
-            success=not outcome["unknown"] or bool(outcome["loaded"]),
-            metadata=outcome,
-        )
-
-
-class CronTool(_PromptHintsMixin, BaseTool):
-    """Schedule, list, and cancel timed tasks for the current conversation.
-
-    Mirrors nanobot's cron tool. Jobs belong to the conversation that
-    created them: a chat job re-runs as a turn appended to that session; a
-    partner job is injected into the partner's message bus so the reply
-    rides the original IM channel. The owner routing context arrives via
-    the pipeline-injected ``_cron_owner`` kwarg — never from the model.
-    """
-
-    def get_definition(self) -> ToolDefinition:
-        return ToolDefinition(
-            name="cron",
-            description=(
-                "Schedule a task to run later, list scheduled tasks, or "
-                "cancel one. When a task is due, its message is executed "
-                "as a new instruction in this same conversation and the "
-                "result is delivered here. Use action='schedule' with "
-                "`message` plus EXACTLY ONE of: `at` (ISO 8601 time, one-"
-                "shot), `every_seconds` (repeating interval, min 30), or "
-                "`cron_expr` (cron expression like '0 9 * * *', optional "
-                "`tz` IANA timezone). Use action='list' to see this "
-                "conversation's tasks and action='cancel' with `job_id` "
-                "to remove one. Times without a timezone are server-local."
-            ),
-            parameters=[
-                ToolParameter(
-                    name="action",
-                    type="string",
-                    description="What to do.",
-                    required=True,
-                    enum=["schedule", "list", "cancel"],
-                ),
-                ToolParameter(
-                    name="message",
-                    type="string",
-                    description=(
-                        "schedule: the instruction to execute when due — "
-                        "write it as a complete, self-contained request."
-                    ),
-                    required=False,
-                ),
-                ToolParameter(
-                    name="name",
-                    type="string",
-                    description="schedule: short human-readable task name.",
-                    required=False,
-                ),
-                ToolParameter(
-                    name="at",
-                    type="string",
-                    description=(
-                        "schedule (one-shot): ISO 8601 time, e.g. "
-                        "'2026-06-12T09:00' or with offset '…+08:00'."
-                    ),
-                    required=False,
-                ),
-                ToolParameter(
-                    name="every_seconds",
-                    type="integer",
-                    description="schedule (repeating): interval in seconds, minimum 30.",
-                    required=False,
-                ),
-                ToolParameter(
-                    name="cron_expr",
-                    type="string",
-                    description="schedule (cron): 5-field cron expression, e.g. '0 9 * * 1-5'.",
-                    required=False,
-                ),
-                ToolParameter(
-                    name="tz",
-                    type="string",
-                    description="schedule (cron): IANA timezone for cron_expr, e.g. 'Asia/Hong_Kong'.",
-                    required=False,
-                ),
-                ToolParameter(
-                    name="delete_after_run",
-                    type="boolean",
-                    description="schedule: remove the task after one run (default true for 'at').",
-                    required=False,
-                ),
-                ToolParameter(
-                    name="job_id",
-                    type="string",
-                    description="cancel: id of the task to remove (from action='list').",
-                    required=False,
-                ),
-            ],
-        )
-
-    async def execute(self, **kwargs: Any) -> ToolResult:
-        from deeptutor.tools.cron_tool import run_cron_action
-
-        outcome = run_cron_action(kwargs)
-        return ToolResult(content=outcome.text, success=outcome.ok, metadata=outcome.meta)
-
-
 BUILTIN_TOOL_TYPES: tuple[type[BaseTool], ...] = (
-    BrainstormTool,
     RAGTool,
     KbFilesTool,
     WebSearchTool,
     CodeExecutionTool,
-    ReasonTool,
     PaperSearchToolWrapper,
     ReadSourceTool,
     ReadMemoryTool,
     WriteMemoryTool,
     ReadSkillTool,
-    LoadToolsTool,
-    ExecTool,
     WebFetchTool,
     ListNotebookTool,
     WriteNoteTool,
-    GithubTool,
     AskUserTool,
-    CronTool,
-    # Image → GeoGebra figure reconstruction. User-toggleable in chat; the
-    # solve loop capability force-mounts it for diagram problems.
-    GeoGebraAnalysisTool,
-    # Text-to-image / text-to-video generation. User-toggleable + per-user
-    # grant-gated; the chat pipeline only mounts them when a model is configured.
+    # Text-to-image generation. User-toggleable; the chat pipeline only mounts
+    # it when a model is configured.
     ImagegenTool,
-    VideogenTool,
     # Mastery Path + Solve + Obsidian tools — globally registered so schemas/API
     # stay stable; the chat loop capabilities decide when to auto-mount them for
     # a turn. Obsidian is a knowledge capability: when its vault is selected it
@@ -1597,14 +1181,6 @@ BUILTIN_TOOL_TYPES: tuple[type[BaseTool], ...] = (
     # capability runs the turn exclusively on it when a connected agent is the
     # selected KB.
     *SUBAGENT_TOOL_TYPES,
-    # Partner-only memory + history tools. Globally registered so schemas/API
-    # stay stable, but never mounted in product chat: the partner runtime
-    # force-mounts them (and suppresses chat's read_memory/write_memory) on
-    # every partner turn. Deliberately absent from CONFIGURABLE_BUILTIN_TOOL_NAMES
-    # — they are mandatory, not owner-configurable.
-    PartnerReadTool,
-    PartnerMemorizeTool,
-    PartnerSearchTool,
 )
 
 # No tools are parked right now. When a tool's implementation is being
@@ -1625,29 +1201,23 @@ COMING_SOON_TOOL_NAMES: tuple[str, ...] = tuple(
 # locked-on from the user's perspective. Ordering here is the canonical
 # display order for the settings page.
 USER_TOGGLEABLE_TOOL_NAMES: tuple[str, ...] = (
-    "brainstorm",
+    "code_execution",
     "web_search",
     "paper_search",
-    "reason",
-    "geogebra_analysis",
     "imagegen",
-    "videogen",
 )
 
 # Built-in tools the chat agent loop auto-mounts under context gates (a KB
 # attached, the sandbox enabled, the user having memory/notebooks, …) rather
-# than user toggles — "locked-on" in the product chat composer. Partners,
-# however, can selectively allow/deny these per companion (default: all
-# allowed) so an IM-facing partner can be denied e.g. memory access.
+# than user toggles — "locked-on" in the product chat composer.
 # ``tool_composition.AUTO_MOUNTED_TOOLS`` is derived from this tuple, so the
 # two stay in lockstep; this ordering is the canonical display order for the
-# partner config UI. Capability-owned tools (mastery/solve/obsidian/subagent)
+# configuration UI. Capability-owned tools (mastery/solve/obsidian/subagent)
 # are intentionally absent — they are gated by capability activation, never by
 # this surface.
 CONFIGURABLE_BUILTIN_TOOL_NAMES: tuple[str, ...] = (
     "rag",
     "kb_files",
-    "code_execution",
     "read_source",
     "read_memory",
     "write_memory",
@@ -1655,10 +1225,6 @@ CONFIGURABLE_BUILTIN_TOOL_NAMES: tuple[str, ...] = (
     "list_notebook",
     "write_note",
     "web_fetch",
-    "github",
-    "exec",
-    "load_tools",
-    "cron",
     "ask_user",
 )
 
@@ -1676,29 +1242,18 @@ __all__ = [
     "COMING_SOON_TOOL_NAMES",
     "COMING_SOON_TOOL_TYPES",
     "CONFIGURABLE_BUILTIN_TOOL_NAMES",
-    "PARTNER_BUILTIN_TOOL_NAMES",
     "TOOL_ALIASES",
     "USER_TOGGLEABLE_TOOL_NAMES",
     "AskUserTool",
-    "BrainstormTool",
     "CodeExecutionTool",
-    "ExecTool",
-    "GeoGebraAnalysisTool",
-    "GithubTool",
     "KbFilesTool",
     "ImagegenTool",
-    "VideogenTool",
     "ListNotebookTool",
     "PaperSearchToolWrapper",
-    "PartnerMemorizeTool",
-    "PartnerReadTool",
-    "PartnerSearchTool",
     "RAGTool",
-    "LoadToolsTool",
     "ReadMemoryTool",
     "ReadSkillTool",
     "ReadSourceTool",
-    "ReasonTool",
     "WebFetchTool",
     "WebSearchTool",
     "WriteMemoryTool",

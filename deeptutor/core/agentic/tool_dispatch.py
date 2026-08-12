@@ -32,7 +32,7 @@ from deeptutor.core.agentic.tool_arg_guard import (
 )
 from deeptutor.core.context import UnifiedContext
 from deeptutor.core.stream_bus import StreamBus
-from deeptutor.core.tool_protocol import ToolLookup, provider_identity
+from deeptutor.core.tool_protocol import ToolLookup
 from deeptutor.core.trace import (
     build_trace_metadata,
     derive_trace_metadata,
@@ -321,7 +321,7 @@ async def _reject_if_args_missing(
         # ``execute_tool_call`` does — a rejected call must not leave a row
         # that reads as still running. ``progress`` (not ``error``): this is
         # a recoverable per-call correction, and a stream ERROR makes a
-        # partner turn re-run the whole turn on its backup model.
+        # outer retry policy re-run the whole turn on its backup model.
         await stream.progress(
             f"{tool_name} not dispatched: missing {', '.join(arg.name for arg in missing)}",
             source=source,
@@ -382,11 +382,6 @@ def _build_per_tool_trace_meta(
     own sub-trace row in the frontend's CallTracePanel."""
     metas: list[dict[str, Any]] = []
     for tool_index, (tool_call_id, tool_name, _exec_args) in enumerate(prepared):
-        # Which external provider is about to run, if any. Resolved here, from
-        # the tool object, because it is the only place that knows — the UI would
-        # otherwise have to recover it by parsing ``mcp_<server>_<tool>``, which
-        # is ambiguous as soon as a server's own name contains an underscore.
-        source, provider = _provider_of(registry, tool_name)
         trace_call_id = new_call_id(f"{trace_id_prefix}-{iteration_index}-tool-{tool_index}")
         base_meta = build_trace_metadata(
             call_id=trace_call_id,
@@ -407,30 +402,10 @@ def _build_per_tool_trace_meta(
                     "iteration_index": iteration_index,
                     "session_id": context.session_id,
                     "turn_id": str(context.metadata.get("turn_id", "")),
-                    # Omitted entirely for a built-in, so a row without them is
-                    # unambiguously "not an external provider" rather than
-                    # "an external provider we failed to identify".
-                    **({"tool_source": source} if source else {}),
-                    **({"tool_provider": provider} if provider else {}),
                 },
             )
         )
     return metas
-
-
-def _provider_of(registry: ToolLookup | None, tool_name: str) -> tuple[str, str]:
-    """``(kind, provider_id)`` for *tool_name*, or two empty strings.
-
-    Never raises: a name the registry cannot resolve is the normal case for a
-    hallucinated tool call, and the trace row for it must still be built.
-    """
-    if registry is None:
-        return "", ""
-    try:
-        tool = registry.get(tool_name)
-    except Exception:
-        return "", ""
-    return provider_identity(tool) if tool is not None else ("", "")
 
 
 async def execute_tool_call(
@@ -552,8 +527,8 @@ async def execute_tool_call(
             # A raising tool closes its sub-trace with a terminal *progress*
             # event, not a stream ERROR. The frontend keys terminality off
             # ``call_state`` alone, while an ERROR event means "the turn is in
-            # trouble" to other consumers — a partner turn collects them and
-            # re-runs the whole turn on its backup model, which would re-execute
+            # trouble" to other consumers — an outer retry policy may collect
+            # them and re-run the whole turn, which would re-execute
             # side-effecting tools (exec, file and notebook writes) that one
             # failed call never used to trigger. Retrieval keeps its ERROR event:
             # that path predates this and has no side effects to repeat.

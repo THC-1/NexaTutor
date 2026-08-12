@@ -1,12 +1,12 @@
-"""Shared HTTP plumbing for media-generation providers (imagegen / videogen).
+"""Shared HTTP plumbing for image-generation providers.
 
-Image- and video-generation endpoints across OpenAI, Volcengine Ark (Seedream /
-Seedance) and compatible gateways share the same auth + base-URL conventions as
+Image-generation endpoints across OpenAI, Volcengine Ark (Seedream) and
+compatible gateways share the same auth + base-URL conventions as
 the rest of the OpenAI-compatible cluster. This module factors out the few
 helpers both generation services need so each adapter stays thin.
 
 Voice keeps its own copy in ``services/voice/base.py`` — this module is
-deliberately scoped to image/video generation rather than refactoring voice.
+deliberately scoped to image generation rather than refactoring voice.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ AUTH_API_KEY_HEADER = "api_key_header"  # api-key: <key>  (Azure OpenAI)
 
 
 class GenerationProviderError(RuntimeError):
-    """Raised when an image/video provider request fails or is misconfigured."""
+    """Raised when an image provider request fails or is misconfigured."""
 
 
 def build_auth_headers(auth_style: str, api_key: str) -> dict[str, str]:

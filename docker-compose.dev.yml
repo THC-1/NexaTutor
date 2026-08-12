@@ -1,5 +1,5 @@
 # ============================================
-# DeepTutor Docker Compose - Development Override
+# NexaTutor Docker Compose - Development Override
 # ============================================
 # Use with: python scripts/docker_compose.py -f docker-compose.yml -f docker-compose.dev.yml up
 #
@@ -10,11 +10,7 @@
 # ============================================
 
 services:
-  pocketbase:
-    volumes:
-      - ./data/pocketbase:/pb/pb_data
-
-  deeptutor:
+  nexatutor:
     build:
       target: development
 
@@ -48,4 +44,4 @@ services:
     #     max-file: "3"
 
     networks:
-      - deeptutor-network
+      - nexatutor-network

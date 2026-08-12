@@ -2,7 +2,6 @@
 
 import { Fragment, memo, useEffect, useRef, useState } from "react";
 import {
-  BookOpen,
   Bot,
   ChevronRight,
   Database,
@@ -18,7 +17,6 @@ type SelectableSpaceKey =
   | "knowledge"
   | "chat_history"
   | "my_agents"
-  | "books"
   | "notebooks"
   | "question_bank"
   | "persona"
@@ -29,7 +27,6 @@ export interface ChatSpaceSelectionCounts {
   knowledge: number;
   chatHistory: number;
   myAgents: number;
-  books: number;
   notebooks: number;
   questionBank: number;
   persona: number;
@@ -58,7 +55,6 @@ const ITEM_ORDER: SelectableSpaceKey[] = [
   "knowledge",
   "chat_history",
   "my_agents",
-  "books",
   "notebooks",
   "question_bank",
   "persona",
@@ -78,8 +74,6 @@ function countFor(
       return counts.chatHistory;
     case "my_agents":
       return counts.myAgents;
-    case "books":
-      return counts.books;
     case "notebooks":
       return counts.notebooks;
     case "question_bank":
@@ -138,14 +132,6 @@ export default memo(function ChatSpaceMenu({
           label: "My Agents",
           description: "Reference imported Claude Code / Codex conversations.",
           icon: Bot,
-        };
-      }
-      if (key === "books") {
-        return {
-          key,
-          label: "Books",
-          description: "Reference generated book chapters in chat.",
-          icon: BookOpen,
         };
       }
       if (key === "persona") {

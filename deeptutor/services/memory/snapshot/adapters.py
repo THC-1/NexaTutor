@@ -3,8 +3,7 @@
 One pure read-only function per surface. Adapters never mutate
 workspace state. They read whatever lives under
 ``data/user/workspace/`` (or, for chat/quiz, the chat history SQLite
-DB; for kb-list, the kb config JSON; for the ``partner`` surface, the
-per-partner conversation JSONL under ``data/partners/``).
+DB; for kb-list, the kb config JSON).
 
 Each adapter returns a ``list[Entity]`` with stable ``id`` and a
 deterministic ``fingerprint`` so the diff engine can detect changes
@@ -152,183 +151,6 @@ def read_cowriter_entities() -> list[Entity]:
                 fingerprint=_sha1(title, content),
             )
         )
-    return out
-
-
-def read_book_entities() -> list[Entity]:
-    books_dir = get_path_service().get_book_dir()
-    if not books_dir.exists():
-        return []
-    out: list[Entity] = []
-    for entry in sorted(books_dir.iterdir()):
-        if not entry.is_dir():
-            continue
-        manifest_path = entry / "manifest.json"
-        if not manifest_path.exists():
-            continue
-        try:
-            m = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        book_id = m.get("id")
-        if not book_id:
-            continue
-        title = m.get("title", "") or ""
-        description = m.get("description", "") or ""
-        # Pull page titles + chapter outline from spine for L2 to chew on.
-        spine_path = entry / "spine.json"
-        page_titles: list[str] = []
-        if spine_path.exists():
-            try:
-                spine = json.loads(spine_path.read_text(encoding="utf-8"))
-                page_titles = [
-                    str(p.get("title") or p.get("id") or "")
-                    for p in (spine.get("pages") or [])
-                    if isinstance(p, dict)
-                ]
-            except (OSError, json.JSONDecodeError):
-                page_titles = []
-        content = "\n\n".join(
-            part
-            for part in (
-                f"# {title}",
-                description,
-                "## Pages\n" + "\n".join(f"- {p}" for p in page_titles) if page_titles else "",
-            )
-            if part
-        )
-        out.append(
-            Entity(
-                id=book_id,
-                label=title or book_id,
-                ts=_iso(m.get("updated_at") or m.get("created_at")),
-                content=content,
-                metadata={
-                    "book_id": book_id,
-                    "page_count": m.get("page_count", 0),
-                    "chapter_count": m.get("chapter_count", 0),
-                    "knowledge_bases": m.get("knowledge_bases", []),
-                    "status": m.get("status", ""),
-                },
-                fingerprint=_sha1(title, description, m.get("updated_at"), len(page_titles)),
-            )
-        )
-    return out
-
-
-def _partner_display_name(partner_dir, partner_id: str) -> str:
-    """Read ``name`` out of a partner's ``config.yaml`` for tagging.
-
-    Falls back to the directory id when the config is missing or unreadable.
-    """
-    cfg = partner_dir / "config.yaml"
-    if not cfg.exists():
-        return partner_id
-    try:
-        import yaml
-
-        data = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return partner_id
-    if isinstance(data, dict):
-        name = data.get("name")
-        if isinstance(name, str) and name.strip():
-            return name.strip()
-    return partner_id
-
-
-def _partner_session_entity(path, partner_id: str, partner_name: str) -> Entity | None:
-    """Build one Entity from a partner session JSONL file.
-
-    The conversation is inlined as ``user / assistant`` blocks (mirroring
-    :func:`read_chat_entities`) so L2 sees the actual dialogue, and the
-    originating partner is tagged into both the label and the metadata so
-    the consolidator carries provenance into L2/L3.
-    """
-    records: list[dict] = []
-    try:
-        with path.open("r", encoding="utf-8") as fh:
-            for raw in fh:
-                raw = raw.strip()
-                if not raw:
-                    continue
-                try:
-                    obj = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(obj, dict):
-                    records.append(obj)
-    except OSError:
-        return None
-
-    blocks: list[str] = []
-    for r in records:
-        role = r.get("role") or ""
-        body = (r.get("content") or "").strip()
-        if not body:
-            continue
-        blocks.append(f"### {role}\n{body}")
-    if not blocks:
-        return None
-
-    session_key = path.stem
-    archived = session_key.startswith("_archived_")
-    last = records[-1]
-    last_ts = last.get("timestamp", "")
-    last_content = last.get("content", "")
-    return Entity(
-        id=f"{partner_id}:{session_key}",
-        label=f"{session_key} · {partner_name}",
-        ts=_iso(last_ts),
-        content="\n\n".join(blocks),
-        metadata={
-            "partner_id": partner_id,
-            "partner_name": partner_name,
-            "session_key": session_key,
-            "archived": archived,
-            "message_count": len(blocks),
-        },
-        fingerprint=_sha1(len(blocks), last_ts, last_content),
-    )
-
-
-def read_partner_entities() -> list[Entity]:
-    """One Entity per partner conversation *session* (archived + active),
-    tagged with the originating partner. Surfaced under the ``partner``
-    surface (UI label "伙伴").
-
-    Partner runtimes persist conversations as JSONL under
-    ``data/partners/<id>/sessions/*.jsonl`` — a store entirely separate from
-    the chat-history SQLite DB the ``chat`` adapter reads. This adapter
-    bridges that store into the memory pipeline so partner conversations
-    consolidate into L2/L3 like every other surface.
-
-    Partners are anchored to the admin workspace, so we only surface them
-    when the active scope IS the admin's own memory; a regular user's memory
-    view must not see the admin's partner conversations.
-    """
-    from deeptutor.multi_user.paths import get_admin_path_service
-
-    admin_root = get_admin_path_service().workspace_root.resolve()
-    if get_path_service().workspace_root.resolve() != admin_root:
-        return []
-    partners_root = admin_root / "partners"
-    if not partners_root.exists():
-        return []
-
-    out: list[Entity] = []
-    for partner_dir in sorted(partners_root.iterdir()):
-        if not partner_dir.is_dir():
-            continue
-        sessions_dir = partner_dir / "sessions"
-        if not sessions_dir.is_dir():
-            continue
-        partner_id = partner_dir.name
-        partner_name = _partner_display_name(partner_dir, partner_id)
-        for sess_file in sorted(sessions_dir.glob("*.jsonl")):
-            entity = _partner_session_entity(sess_file, partner_id, partner_name)
-            if entity is not None:
-                out.append(entity)
     return out
 
 
@@ -505,8 +327,6 @@ def read_quiz_entities() -> list[Entity]:
 _READERS = {
     "notebook": read_notebook_entities,
     "cowriter": read_cowriter_entities,
-    "book": read_book_entities,
-    "partner": read_partner_entities,
     "kb": read_kb_entities,
     "chat": read_chat_entities,
     "quiz": read_quiz_entities,

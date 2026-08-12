@@ -85,7 +85,6 @@ from deeptutor.services.llm import get_llm_config, prepare_multimodal_messages
 from deeptutor.services.path_service import get_path_service
 from deeptutor.services.prompt import get_prompt_manager
 from deeptutor.services.prompt.language import append_language_directive
-from deeptutor.services.sandbox import exec_capability_available
 from deeptutor.utils.json_parser import parse_json_response
 
 logger = logging.getLogger(__name__)
@@ -313,7 +312,7 @@ class ResearchPipeline:
         if self.kb_name:
             try:
                 from deeptutor.knowledge.kb_types import OBSIDIAN_KB_TYPE
-                from deeptutor.multi_user.knowledge_access import resolve_kb_metadata
+                from deeptutor.services.local_workspace import resolve_kb_metadata
 
                 meta = resolve_kb_metadata(self.kb_name)
                 if meta and meta.get("type") == OBSIDIAN_KB_TYPE:
@@ -1794,7 +1793,7 @@ class ResearchPipeline:
 
         * Only evidence-producing research tools are surfaced. Chat's
           always-on convenience tools (``write_memory``, ``web_fetch``,
-          ``github``, ``ask_user``) are deliberately not part of the
+          ``ask_user``) are deliberately not part of the
           block loop because they do not provide broad citable retrieval
           for an arbitrary sub-topic.
         * Each name is filtered through the registry so an inactive tool
@@ -1810,7 +1809,6 @@ class ResearchPipeline:
                 has_sources=False,
                 has_memory=user_has_memory(),
                 has_notebooks=user_has_notebooks(),
-                has_code=exec_capability_available(),
             ),
         )
         names = [

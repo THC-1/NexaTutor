@@ -1,6 +1,6 @@
-# NexaTutor 容器运行指南（迁移期）
+# NexaTutor 容器运行指南
 
-> 当前容器镜像、Compose service、volume 和环境变量仍使用 DeepTutor 兼容标识，例如 `ghcr.io/hkuds/deeptutor`、`deeptutor` 和 `DEEPTUTOR_*`。这些名称只有在发布链完成迁移后才能修改，本文不会把尚未存在的 NexaTutor 镜像写成可用状态。
+> Compose service 为 `nexatutor`，目标镜像为 `ghcr.io/thc-1/nexatutor`。发布 workflow 仍暂停，因此预构建镜像可用性需以仓库 Packages 页面为准。
 
 返回 [项目说明](README.md)。
 
@@ -12,9 +12,9 @@ NexaTutor 的目标是个人、本地优先运行。当前仓库仍保留以下�
 - 上游 GHCR 预构建镜像。
 - Docker Compose。
 - Rootless Podman / read-only rootfs。
-- PocketBase、Sandbox Runner 与公网反向代理相关配置。
+- Sandbox Runner 隔离后端。
 
-其中 PocketBase、外部集成 Sidecar 和复杂公网部署属于待评估或待删除的遗留能力。Sandbox Runner 可能仍被 Code Execution 使用，在替代隔离方案确认前不能顺带删除。
+所有应用端口只发布到宿主机 loopback。Sandbox Runner 仍被 Code Execution 使用，在替代隔离方案确认前不能删除。
 
 ## 推荐方式：本机源码运行
 
@@ -25,7 +25,7 @@ NexaTutor 的目标是个人、本地优先运行。当前仓库仍保留以下�
 ```powershell
 docker compose -f docker-compose.yml up -d --build
 docker compose -f docker-compose.yml ps
-docker compose -f docker-compose.yml logs -f deeptutor
+docker compose -f docker-compose.yml logs -f nexatutor
 ```
 
 默认访问地址通常为：
@@ -41,9 +41,9 @@ docker compose -f docker-compose.yml down
 
 不要在未检查 volume 与绝对路径前执行 `down -v`。该操作可能删除知识库、会话、Memory、Token 和其他本地数据。
 
-## 上游 GHCR 镜像
+## GHCR 镜像目标
 
-当前可用的预构建镜像仍属于 DeepTutor 上游，不代表 NexaTutor 已发布容器制品：
+发布配置的目标镜像为：
 
 ```powershell
 python scripts/docker_compose.py -f docker-compose.ghcr.yml up -d
@@ -53,7 +53,7 @@ python scripts/docker_compose.py -f docker-compose.ghcr.yml ps
 镜像：
 
 ```text
-ghcr.io/hkuds/deeptutor:latest
+ghcr.io/thc-1/nexatutor:latest
 ```
 
 此方式会包含尚未裁剪完成的上游能力。做 NexaTutor 功能验收时，应优先构建当前源码，而不是用 GHCR 镜像判断裁剪结果。
@@ -65,10 +65,10 @@ ghcr.io/hkuds/deeptutor:latest
 ```bash
 podman compose -f compose.yaml up -d
 podman compose -f compose.yaml ps
-podman compose -f compose.yaml logs -f deeptutor
+podman compose -f compose.yaml logs -f nexatutor
 ```
 
-默认端口只绑定到 `127.0.0.1`。`compose.yaml` 当前仍包含 PocketBase service；不使用时不要把它误写成 NexaTutor Core。
+默认端口只绑定到 `127.0.0.1`。
 
 停止并保留数据：
 
@@ -93,7 +93,7 @@ data/user/settings/*.json
 修改设置后重启兼容 service：
 
 ```powershell
-docker compose -f docker-compose.yml restart deeptutor
+docker compose -f docker-compose.yml restart nexatutor
 ```
 
 不要依赖项目根 `.env` 配置模型、Embedding、搜索或 Auth。`.env` 只用于 Compose 自身需要的宿主机变量；应用运行时以 JSON Settings 为准。
@@ -124,44 +124,39 @@ OpenAI Codex OAuth 仍是迁移期兼容能力。浏览器回调端口需要临�
 源码 Docker Compose：
 
 ```powershell
-docker compose -f docker-compose.yml -f compose.codex-oauth.yaml up -d --force-recreate deeptutor
+docker compose -f docker-compose.yml -f compose.codex-oauth.yaml up -d --force-recreate nexatutor
 ```
 
 GHCR Compose：
 
 ```powershell
-docker compose -f docker-compose.ghcr.yml -f compose.codex-oauth.yaml up -d --force-recreate deeptutor
+docker compose -f docker-compose.ghcr.yml -f compose.codex-oauth.yaml up -d --force-recreate nexatutor
 ```
 
 Podman：
 
 ```bash
-podman compose -f compose.yaml -f compose.codex-oauth.yaml up -d --force-recreate deeptutor
+podman compose -f compose.yaml -f compose.codex-oauth.yaml up -d --force-recreate nexatutor
 ```
 
 完成登录后立即撤销临时端口映射，使用原基础文件重新创建：
 
 ```powershell
-docker compose -f docker-compose.yml up -d --force-recreate deeptutor
+docker compose -f docker-compose.yml up -d --force-recreate nexatutor
 ```
 
-远程 SSH 隧道、反向代理和共享 OAuth 凭据不是 NexaTutor 最终目标，不在本文扩展新的公网部署方案。
-
-## PocketBase
-
-PocketBase 当前仍存在于依赖和 Compose 文件中，但是否被 Chat、Knowledge、Notebook、Question Bank、Memory 和 Mastery Path 使用尚需逐项确认。
-
-在 Core 依赖证据清零前不得直接删除；同时也不能把 PocketBase 描述为 NexaTutor 必需组件。个人本地模式应优先使用现有 SQLite / 本地存储路径。
+远程 SSH 隧道、反向代理和共享 OAuth 凭据不属于 NexaTutor 支持范围。
 
 ## Sandbox Runner
 
 不要把 Sandbox Runner Sidecar 与外部集成 Sidecar 混为一谈。前者可能仍是 `code_execution` 的隔离后端。当前 Windows restricted subprocess 不是强安全沙箱，容器运行也不会自动让任意代码执行安全。
 
-在 Code Execution 安全收敛完成前：
+当前 Code Execution 安全边界：
 
-- 默认关闭 Code Execution。
-- 不向不受信任用户开放。
-- 不宣称具有可对抗恶意代码的强隔离能力。
+- 默认关闭，只能由用户明确启用，第一版仅支持 Python argv。
+- Runner 位于无公网默认路由的内部网络，仅挂载 `data/user/workspace`。
+- 旧 Runner 若不声明 `argv-v1` 会失败关闭，不降级为 Shell。
+- AST allowlist、资源限制和容器隔离属于风险降低；不宣称可对抗恶意代码。
 - 不删除 ResourceLimits、Quota、Artifact 收集或仍被使用的 Sandbox Runner。
 
 ## 本地服务地址
@@ -177,8 +172,8 @@ PocketBase 当前仍存在于依赖和 Compose 文件中，但是否被 Chat、K
 
 ```powershell
 docker compose -f docker-compose.yml ps
-docker compose -f docker-compose.yml logs --tail 200 deeptutor
-docker inspect deeptutor
+docker compose -f docker-compose.yml logs --tail 200 nexatutor
+docker inspect nexatutor
 ```
 
 检查顺序：
@@ -193,7 +188,6 @@ docker inspect deeptutor
 
 - 默认只绑定 `127.0.0.1`。
 - 不把 API Key 写进 Compose、镜像层、前端 Bundle 或普通日志。
-- 不在未启用可靠 Auth 的情况下暴露到公网。
+- 不将应用端口暴露到公网或局域网。
 - 上传、解压和输出路径必须防止 Path Traversal / Zip Slip。
 - 清理 volume 前显示绝对路径、文件数量和预计影响。
-- NexaTutor 最终会删除复杂公网部署能力；当前兼容配置只用于过渡与验证。

@@ -71,22 +71,6 @@ def test_provider_core_passes_disable_ssl_http_client(monkeypatch: pytest.Monkey
     assert clients[0].kwargs["verify"] is False
 
 
-def test_azure_provider_passes_disable_ssl_http_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    from deeptutor.services.llm.provider_core import azure_openai_provider as azure_mod
-
-    clients = _enable_ssl_override(monkeypatch)
-    captured = _capture_async_openai(monkeypatch, azure_mod)
-
-    azure_mod.AzureOpenAIProvider(
-        api_key="sk-test",
-        api_base="https://example.openai.azure.com",
-        default_model="gpt-test",
-    )
-
-    assert captured[0]["http_client"] is clients[0]
-    assert clients[0].kwargs["verify"] is False
-
-
 @pytest.mark.asyncio
 async def test_sdk_complete_passes_disable_ssl_http_client(
     monkeypatch: pytest.MonkeyPatch,

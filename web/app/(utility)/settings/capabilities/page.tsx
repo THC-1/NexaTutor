@@ -59,7 +59,6 @@ interface CapabilitiesSettingsDTO {
   question: SimpleLLMBlock & QuestionExtras;
   co_writer: SimpleLLMBlock;
   vision_solver: SimpleLLMBlock;
-  math_animator: SimpleLLMBlock;
 }
 
 function isValidCapabilitiesDTO(
@@ -189,7 +188,7 @@ export default function CapabilitiesSettingsPage() {
   }
 
   function patchSimple(
-    cap: "solve" | "co_writer" | "vision_solver" | "math_animator",
+    cap: "solve" | "co_writer" | "vision_solver",
     value: Partial<SimpleLLMBlock>,
   ) {
     if (!settings) return;
@@ -468,29 +467,6 @@ export default function CapabilitiesSettingsPage() {
           onChange={(n) => patchResearching({ paper_search_years_limit: n })}
           min={1}
           max={50}
-        />
-      </SettingSection>
-
-      <SettingSection
-        title={t("Math animator")}
-        description={t("Manim animation / image generation pipeline.")}
-      >
-        <NumberRow
-          label={t("Temperature")}
-          value={settings.math_animator.temperature}
-          onChange={(n) => patchSimple("math_animator", { temperature: n })}
-          min={0}
-          max={2}
-          step={0.05}
-          isFloat
-        />
-        <NumberRow
-          label={t("Max tokens")}
-          value={settings.math_animator.max_tokens}
-          onChange={(n) => patchSimple("math_animator", { max_tokens: n })}
-          min={256}
-          max={200000}
-          step={100}
         />
       </SettingSection>
 

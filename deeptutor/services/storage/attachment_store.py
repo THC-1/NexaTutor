@@ -32,10 +32,10 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+import re
 from typing import Protocol, runtime_checkable
 from urllib.parse import quote
 
-from deeptutor.partners.helpers import safe_filename
 from deeptutor.services.config import load_system_settings
 from deeptutor.services.path_service import get_path_service
 
@@ -45,18 +45,28 @@ logger = logging.getLogger(__name__)
 _DEFAULT_SUBPATH = ("workspace", "chat", "attachments")
 # Public route prefix served by deeptutor.api.routers.attachments
 _PUBLIC_URL_PREFIX = "/api/attachments"
+_UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
+_CONTROL_FILENAME_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _safe_filename(name: str) -> str:
+    """Replace unsafe path and control characters in an attachment name."""
+    return (
+        _CONTROL_FILENAME_CHARS.sub("", _UNSAFE_FILENAME_CHARS.sub("_", name or ""))
+        .strip()
+        .strip(".")
+    )
 
 
 def _coerce_filename(filename: str) -> str:
     """Reduce *filename* to a safe basename.
 
     * Strips any directory components (defends against ``../`` traversal).
-    * Replaces filesystem-unsafe characters via the existing ``safe_filename``
-      helper (already used by the matrix tutorbot uploads).
+    * Replaces filesystem-unsafe and control characters.
     * Falls back to ``"file"`` if the result is empty.
     """
     base = os.path.basename(filename or "")
-    cleaned = safe_filename(base)
+    cleaned = _safe_filename(base)
     return cleaned or "file"
 
 

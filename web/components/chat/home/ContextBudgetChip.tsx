@@ -12,7 +12,6 @@ export type ContextBudget = {
   free_tokens: number;
   model?: string;
   counter?: string;
-  deferred_tool_count?: number;
   segments: ContextBudgetSegment[];
 };
 
@@ -26,11 +25,9 @@ const SEGMENT_COLORS: Record<string, string> = {
   messages: "#6366f1",
   system_prompt: "#0ea5e9",
   system_tools: "#14b8a6",
-  mcp_tools: "#10b981",
   tool_manifest: "#84cc16",
   extended_tools: "#f59e0b",
   persona_style: "#f97316",
-  partner_turn_policy: "#d946ef",
   memory: "#a855f7",
   knowledge_base_note: "#8b5cf6",
   skills: "#06b6d4",
@@ -221,8 +218,7 @@ export default function ContextBudgetChip({
 
   const estimatedWindow = budget.window_estimated === true;
   const heuristicCounter = budget.counter === "heuristic";
-  const deferredCount = budget.deferred_tool_count ?? 0;
-  const hasNotes = estimatedWindow || heuristicCounter || deferredCount > 0;
+  const hasNotes = estimatedWindow || heuristicCounter;
   const nearFull = usedShare >= 90;
 
   return (
@@ -318,13 +314,6 @@ export default function ContextBudgetChip({
               )}
               {heuristicCounter && (
                 <p>{t("contextBudget.note.heuristicCounter")}</p>
-              )}
-              {deferredCount > 0 && (
-                <p>
-                  {t("contextBudget.note.deferredTools", {
-                    count: deferredCount,
-                  })}
-                </p>
               )}
             </div>
           )}

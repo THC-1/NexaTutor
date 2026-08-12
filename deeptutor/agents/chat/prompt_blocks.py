@@ -76,9 +76,6 @@ class ChatPromptAssembler:
         blocks.extend(capability_blocks or [])
         if context.persona_context:
             blocks.append(PromptBlock("persona_style", context.persona_context))
-        partner_policy = self._partner_turn_policy(context)
-        if partner_policy:
-            blocks.append(PromptBlock("partner_turn_policy", partner_policy))
         if context.memory_context:
             blocks.append(PromptBlock("memory", context.memory_context))
         if include_tool_manifest:
@@ -104,39 +101,9 @@ class ChatPromptAssembler:
         return blocks
 
     def _general_block(self, context: UnifiedContext) -> str:
-        """Product identity, or the partner identity when one is present.
-
-        Partner turns carry ``metadata["agent_identity"]`` (user-given name +
-        description); their identity comes from that and the Soul block, so
-        the "You are DeepTutor" general is swapped for ``general_partner``.
-        Chat turns carry no identity and render the general block unchanged.
-        """
-        identity = context.metadata.get("agent_identity")
-        name = ""
-        if isinstance(identity, dict):
-            name = str(identity.get("name") or "").strip()
-        if not name:
-            return self._t("general")
-        content = self._t(
-            "general_partner",
-            default='You are a companion created by the user. The name the user gave you is "{name}".',
-        ).format(name=name)
-        description = str(identity.get("description") or "").strip()
-        if description:
-            description_line = self._t(
-                "general_partner_description",
-                default="The user's description of you: {description}",
-            ).format(description=description)
-            content = f"{content}\n{description_line}"
-        return content
-
-    def _partner_turn_policy(self, context: UnifiedContext) -> str:
-        identity = context.metadata.get("agent_identity")
-        if not isinstance(identity, dict):
-            return ""
-        if not str(identity.get("name") or "").strip():
-            return ""
-        return self._t("partner_turn_policy", default="")
+        """Return the product identity for a standard local chat turn."""
+        _ = context
+        return self._t("general")
 
     def user_message(
         self,

@@ -1,5 +1,5 @@
 # ============================================
-# DeepTutor Python Dependencies (Runtime Bundle)
+# NexaTutor Python Dependencies (Runtime Bundle)
 # ============================================
 # Python >= 3.11 required
 #
@@ -8,15 +8,12 @@
 # don't yet have access to pyproject.toml + source code.
 #
 # Preferred installs:
-#   pip install deeptutor               # Full app (public wheel)
-#   pip install deeptutor-cli           # CLI-only public wheel
+#   pip install nexatutor               # Full app (public wheel)
+#   pip install nexatutor-cli           # CLI-only public wheel
 #   pip install -e .                    # Source checkout
-#   pip install -e ".[partners]"       # Server + partner channel SDKs
-#   pip install -e ".[matrix]"         # Matrix channel for partners
-#   pip install -e ".[math-animator]"  # Manim animation engine (addon)
 #   pip install -e ".[dev]"            # Server + dev/test tools
 #   pip install -e ".[all]"            # Everything
 #
-# This file installs the full server runtime (CLI + API + partners).
+# This file installs the full server runtime (CLI + API).
 
--r requirements/partners.txt
+-r requirements/server.txt

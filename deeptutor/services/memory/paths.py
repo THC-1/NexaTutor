@@ -25,10 +25,7 @@ if TYPE_CHECKING:
     from deeptutor.services.path_service import PathService
 
 # When set, memory paths resolve through this PathService instead of the active
-# user's. A partner runtime installs the *owner's* (admin) service for the
-# duration of a turn so the chat agent's ``read_memory`` / ``write_memory``
-# tools see the owner's memory — not the partner's own (empty) scope — while
-# every *other* service (rag / skills / notebooks) stays on the partner scope.
+# user's. This supports explicitly scoped maintenance and import operations.
 _memory_path_service: ContextVar[PathService | None] = ContextVar(
     "memory_path_service", default=None
 )
@@ -49,8 +46,6 @@ Surface = Literal[
     "notebook",
     "quiz",
     "kb",
-    "book",
-    "partner",
     "cowriter",
 ]
 L3Slot = Literal["recent", "profile", "scope", "preferences"]

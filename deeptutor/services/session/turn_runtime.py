@@ -192,7 +192,6 @@ def _request_snapshot_metadata(
     notebook_references: list[Any],
     history_references: list[Any],
     question_notebook_references: list[Any],
-    book_references: list[Any],
     persona: str,
     memory_references: Sequence[str],
     llm_selection: dict[str, str] | None,
@@ -215,8 +214,6 @@ def _request_snapshot_metadata(
         snapshot["historyReferences"] = history_references
     if question_notebook_references:
         snapshot["questionNotebookReferences"] = question_notebook_references
-    if book_references:
-        snapshot["bookReferences"] = book_references
     if persona:
         snapshot["persona"] = persona
     if memory_references:
@@ -707,44 +704,6 @@ class TurnRuntimeManager:
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
         if llm_selection:
-            try:
-                from deeptutor.multi_user.model_access import apply_allowed_llm_selection
-
-                llm_selection = apply_allowed_llm_selection(llm_selection) or {}
-            except PermissionError as exc:
-                raise RuntimeError(str(exc)) from exc
-        else:
-            # Non-admin users MUST end up with a concrete llm_selection so we
-            # never silently fall through to the global LLM client (which is
-            # configured from admin runtime settings). Admin keeps the existing behavior
-            # (None llm_selection → default config from admin scope).
-            from deeptutor.multi_user.context import get_current_user
-            from deeptutor.multi_user.model_access import (
-                has_capability_access,
-                redacted_model_access,
-            )
-
-            current_user = get_current_user()
-            if not current_user.is_admin:
-                # Single gate, shared with the frontend lock and any HTTP
-                # surface: no usable LLM grant → a clear terminal error here
-                # instead of a silent fall-through to the global client.
-                if not has_capability_access("llm"):
-                    raise RuntimeError(
-                        "No LLM model is assigned to your account. Please contact an administrator."
-                    )
-                # Pin the first granted-and-available model as the selection.
-                assigned_llms = [
-                    item
-                    for item in redacted_model_access(current_user.id).get("llm", [])
-                    if item.get("available")
-                ]
-                llm_selection = {
-                    "profile_id": assigned_llms[0].get("profile_id"),
-                    "model_id": assigned_llms[0].get("model_id"),
-                }
-        if llm_selection:
-            from deeptutor.multi_user.personal_models import merge_personal_llm_profiles
             from deeptutor.services.config import get_model_catalog_service
             from deeptutor.services.model_selection import (
                 LLMSelection,
@@ -757,7 +716,7 @@ class TurnRuntimeManager:
                 # reject a Codex model the user signed in for themselves —
                 # the same merge the resolution path performs (#781).
                 apply_llm_selection_to_catalog(
-                    merge_personal_llm_profiles(get_model_catalog_service().load()),
+                    get_model_catalog_service().load(),
                     LLMSelection.from_payload(llm_selection),
                 )
             except ValueError as exc:
@@ -775,18 +734,6 @@ class TurnRuntimeManager:
                 payload = {**payload, "tools": list(get_enabled_optional_tools())}
             except Exception:
                 payload = {**payload, "tools": []}
-        # Admin-imposed per-user tool whitelist (grant v2). Sits after the
-        # back-fill so explicit caller lists and settings defaults pass the
-        # same gate; this is the single enforcement point for every
-        # capability's turn.
-        from deeptutor.multi_user.tool_access import allowed_optional_tools
-
-        allowed_tools = allowed_optional_tools()
-        if allowed_tools is not None:
-            payload = {
-                **payload,
-                "tools": [t for t in (payload.get("tools") or []) if t in allowed_tools],
-            }
         payload = {**payload, "llm_selection": llm_selection}
         await self._recover_orphan_running_turns_for_session(session["id"])
         preference_update: dict[str, Any] = {
@@ -931,11 +878,6 @@ class TurnRuntimeManager:
                 overrides.get("history_references")
                 if overrides.get("history_references") is not None
                 else preferences.get("history_references") or []
-            ),
-            "book_references": list(
-                overrides.get("book_references")
-                if overrides.get("book_references") is not None
-                else snapshot.get("bookReferences") or []
             ),
             "config": config,
         }
@@ -1198,7 +1140,6 @@ class TurnRuntimeManager:
 
         try:
             from deeptutor.agents.notebook import NotebookAnalysisAgent
-            from deeptutor.book.context import build_book_context
             from deeptutor.core.context import Attachment, UnifiedContext
             from deeptutor.runtime.orchestrator import ChatOrchestrator
             from deeptutor.services.memory import get_memory_store
@@ -1241,13 +1182,10 @@ class TurnRuntimeManager:
             notebook_references = payload.get("notebook_references", []) or []
             history_references = payload.get("history_references", []) or []
             question_notebook_references = payload.get("question_notebook_references", []) or []
-            book_context_result = build_book_context(payload.get("book_references", []) or [])
-            book_references = book_context_result.references
             memory_references = _extract_memory_references(payload)
             notebook_context = ""
             history_context = ""
             question_bank_context = ""
-            book_context = book_context_result.text
 
             import base64 as _b64
             import uuid as _uuid
@@ -1366,21 +1304,12 @@ class TurnRuntimeManager:
             # token). Resolution: the user's own workspace first; non-admin
             # users fall back to admin-authored presets (personas carry no
             # privileged workflow, so no grant gate applies).
-            from deeptutor.multi_user.context import get_current_user
-            from deeptutor.multi_user.paths import get_admin_path_service
-            from deeptutor.multi_user.skill_access import assigned_skill_ids
-            from deeptutor.services.persona import PersonaService, get_persona_service
-            from deeptutor.services.skill.service import SkillService, render_skills_manifest
-
-            current_user = get_current_user()
+            from deeptutor.services.persona import get_persona_service
+            from deeptutor.services.skill.service import render_skills_manifest
             requested_persona = str(payload.get("persona") or "").strip()
             persona_context = ""
             if requested_persona:
                 persona_context = get_persona_service().load_for_context(requested_persona)
-                if not persona_context and not current_user.is_admin:
-                    persona_context = PersonaService(
-                        root=get_admin_path_service().get_workspace_dir() / "personas"
-                    ).load_for_context(requested_persona)
             active_persona = requested_persona if persona_context else ""
 
             # Skills: never user-selected per turn. The model sees a
@@ -1391,21 +1320,6 @@ class TurnRuntimeManager:
             user_skill_service = get_skill_service()
             skill_entries = user_skill_service.summary_entries()
             always_blocks = [user_skill_service.load_always_for_context()]
-            if not current_user.is_admin:
-                assigned_service = SkillService(
-                    root=get_admin_path_service().get_workspace_dir() / "skills",
-                    builtin_root=None,
-                )
-                allowed_skills = assigned_skill_ids(current_user.id)
-                assigned_entries = [
-                    e for e in assigned_service.summary_entries() if e.name in allowed_skills
-                ]
-                skill_entries = skill_entries + assigned_entries
-                always_blocks.append(
-                    assigned_service.load_for_context(
-                        [e.name for e in assigned_entries if e.always and e.available]
-                    )
-                )
             skills_manifest = "\n\n".join(
                 part for part in (*always_blocks, render_skills_manifest(skill_entries)) if part
             )
@@ -1445,8 +1359,6 @@ class TurnRuntimeManager:
                     current_turn_ordinal=current_turn_ordinal,
                     fresh_attachment_records=attachment_records,
                     fresh_notebook_records=resolved_notebook_records,
-                    fresh_book_context_text=book_context,
-                    fresh_book_references=book_references,
                     fresh_history_session_ids=history_references,
                     fresh_question_entry_ids=question_notebook_references,
                     language=str(payload.get("language", "en") or "en"),
@@ -1562,8 +1474,6 @@ class TurnRuntimeManager:
                 context_parts: list[str] = []
                 if document_texts:
                     context_parts.append("[Attached Documents]\n" + "\n\n".join(document_texts))
-                if book_context:
-                    context_parts.append(f"[Book Context]\n{book_context}")
                 if notebook_context:
                     context_parts.append(f"[Notebook Context]\n{notebook_context}")
                 if history_context:
@@ -1577,8 +1487,7 @@ class TurnRuntimeManager:
             conversation_history = list(history_result.conversation_history)
             conversation_context_text = history_result.context_text
 
-            # SQLite returns integer rowids; PocketBase returns its string
-            # record ids. Both are opaque to this layer — they only flow into
+            # Message ids are opaque to this layer — they only flow into
             # ``parent_message_id`` chaining and the DONE reconcile metadata.
             new_user_message_id: int | str | None = None
             if persist_user_message:
@@ -1603,7 +1512,6 @@ class TurnRuntimeManager:
                         notebook_references=notebook_references,
                         history_references=history_references,
                         question_notebook_references=question_notebook_references,
-                        book_references=book_references,
                         persona=active_persona,
                         memory_references=memory_references,
                         llm_selection=payload.get("llm_selection"),
@@ -1635,9 +1543,6 @@ class TurnRuntimeManager:
                     "notebook_references": notebook_references,
                     "history_references": history_references,
                     "question_notebook_references": question_notebook_references,
-                    "book_references": book_references,
-                    "book_context": book_context,
-                    "book_context_warnings": book_context_result.warnings,
                     "memory_references": memory_references,
                     "question_bank_context": question_bank_context,
                     "memory_context": memory_context,

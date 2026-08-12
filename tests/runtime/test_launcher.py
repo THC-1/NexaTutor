@@ -13,29 +13,22 @@ class _FakeTty:
         return True
 
 
-def test_packaged_web_cache_replaces_next_public_placeholders(tmp_path: Path) -> None:
+def test_packaged_web_cache_replaces_api_base_placeholder(tmp_path: Path) -> None:
     packaged = tmp_path / "pkg"
     (packaged / ".next" / "static").mkdir(parents=True)
     (packaged / "server.js").write_text(
         "const api='__NEXT_PUBLIC_API_BASE_PLACEHOLDER__';",
         encoding="utf-8",
     )
-    (packaged / ".next" / "static" / "app.js").write_text(
-        "auth='__NEXT_PUBLIC_AUTH_ENABLED_PLACEHOLDER__'",
-        encoding="utf-8",
-    )
-
     runtime = launcher._copy_packaged_web_if_needed(
         packaged,
         home=tmp_path / "home",
         api_base="http://localhost:8001",
-        auth_enabled=True,
     )
 
     assert (runtime / "server.js").read_text(encoding="utf-8") == (
         "const api='http://localhost:8001';"
     )
-    assert "auth='true'" in (runtime / ".next" / "static" / "app.js").read_text(encoding="utf-8")
 
 
 def test_packaged_web_cache_refreshes_when_public_settings_change(tmp_path: Path) -> None:
@@ -51,13 +44,11 @@ def test_packaged_web_cache_refreshes_when_public_settings_change(tmp_path: Path
         packaged,
         home=home,
         api_base="http://localhost:8001",
-        auth_enabled=False,
     )
     second = launcher._copy_packaged_web_if_needed(
         packaged,
         home=home,
         api_base="https://api.example",
-        auth_enabled=False,
     )
 
     assert first == second
@@ -299,7 +290,7 @@ def test_source_frontend_defaults_to_cached_production_build(
 ) -> None:
     source = tmp_path / "web"
     (source / "node_modules").mkdir(parents=True)
-    builds: list[tuple[Path, str, str, bool]] = []
+    builds: list[tuple[Path, str, str]] = []
 
     monkeypatch.setattr(launcher, "_packaged_web_dir", lambda: None)
     monkeypatch.setattr(launcher, "_source_web_dir", lambda _home: source)
@@ -307,8 +298,8 @@ def test_source_frontend_defaults_to_cached_production_build(
     monkeypatch.setattr(
         launcher,
         "_ensure_source_production_build",
-        lambda path, npm, *, api_base, auth_enabled: builds.append(
-            (path, npm, api_base, auth_enabled)
+        lambda path, npm, *, api_base: builds.append(
+            (path, npm, api_base)
         ),
     )
 
@@ -316,14 +307,13 @@ def test_source_frontend_defaults_to_cached_production_build(
         tmp_path,
         3782,
         api_base="http://localhost:8001",
-        auth_enabled=True,
     )
 
     assert runtime.kind == "source-production"
     standalone = source / launcher.SOURCE_PRODUCTION_DIST_DIR / "standalone"
     assert runtime.command == ["/bin/node", str(standalone / "server.js")]
     assert runtime.cwd == standalone
-    assert builds == [(source, "/bin/npm", "http://localhost:8001", True)]
+    assert builds == [(source, "/bin/npm", "http://localhost:8001")]
 
 
 def test_source_frontend_dev_mode_is_explicit_and_skips_production_build(
@@ -347,7 +337,6 @@ def test_source_frontend_dev_mode_is_explicit_and_skips_production_build(
         tmp_path,
         3782,
         api_base="http://localhost:8001",
-        auth_enabled=False,
         dev=True,
     )
 
@@ -370,7 +359,7 @@ def test_source_production_build_is_reused_until_an_input_changes(
     calls: list[tuple[list[str], Path, str]] = []
 
     def _run(command, cwd, env, **_kwargs):
-        calls.append((list(command), Path(cwd), env["DEEPTUTOR_NEXT_DIST_DIR"]))
+        calls.append((list(command), Path(cwd), env["NEXATUTOR_NEXT_DIST_DIR"]))
         next_env.write_text("// production dist types\n", encoding="utf-8")
         dist = source / launcher.SOURCE_PRODUCTION_DIST_DIR
         (dist / "standalone").mkdir(parents=True, exist_ok=True)
@@ -385,7 +374,6 @@ def test_source_production_build_is_reused_until_an_input_changes(
             source,
             "npm",
             api_base="http://localhost:8001",
-            auth_enabled=False,
         )
 
     page.write_text("export default function Page() { return <main />; }", encoding="utf-8")
@@ -393,7 +381,6 @@ def test_source_production_build_is_reused_until_an_input_changes(
         source,
         "npm",
         api_base="http://localhost:8001",
-        auth_enabled=False,
     )
 
     assert calls == [
@@ -423,6 +410,8 @@ def test_start_uses_ipv4_loopback_for_frontend_proxy(
         system_json_path=settings_dir / "system.json",
     )
     captured_env: dict[str, str] = {}
+    for key in launcher.LEGACY_AUTH_ENV_KEYS:
+        monkeypatch.setenv(key, "legacy-value")
 
     monkeypatch.setattr(launcher, "_relax_console_encoding", lambda: None)
     monkeypatch.setattr(launcher, "_reset_runtime_singletons", lambda: None)
@@ -433,7 +422,6 @@ def test_start_uses_ipv4_loopback_for_frontend_proxy(
         "export_runtime_settings_to_env",
         lambda **_kwargs: {},
     )
-    monkeypatch.setattr(config_module, "load_auth_settings", lambda: {"enabled": False})
     monkeypatch.setattr(config_module, "get_ws_max_size", lambda: 1024)
     monkeypatch.setattr(setup_module, "init_user_directories", lambda _home: None)
     monkeypatch.setattr(launcher, "resolve_language", lambda: "en")
@@ -468,4 +456,5 @@ def test_start_uses_ipv4_loopback_for_frontend_proxy(
     with pytest.raises(RuntimeError, match="captured launch environment"):
         launcher.start(tmp_path)
 
-    assert captured_env["DEEPTUTOR_API_BASE_URL"] == (f"http://127.0.0.1:{resolved_backend_port}")
+    assert captured_env["NEXATUTOR_API_BASE_URL"] == (f"http://127.0.0.1:{resolved_backend_port}")
+    assert not set(launcher.LEGACY_AUTH_ENV_KEYS).intersection(captured_env)

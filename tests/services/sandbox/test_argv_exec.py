@@ -168,9 +168,9 @@ def test_the_runner_prefers_argv_over_the_shell_string() -> None:
     assert result["stdout"].strip() == "argv-form"
 
 
-def test_the_runner_runs_the_shell_string_when_no_argv_is_sent() -> None:
+def test_the_runner_refuses_the_shell_string_when_no_argv_is_sent() -> None:
     result = runner_server.execute({"command": "echo a && echo b", "limits": {"timeout_s": 10}})
-    assert result["stdout"].split() == ["a", "b"]
+    assert "argv is required" in result["error"]
 
 
 def test_the_runner_does_not_expand_a_hostile_argv_element() -> None:

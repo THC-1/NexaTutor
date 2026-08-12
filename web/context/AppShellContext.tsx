@@ -115,7 +115,6 @@ export function AppShellProvider({ children }: { children: React.ReactNode }) {
       try {
         const response = await apiFetch(apiUrl("/api/v1/settings/ui"), {
           signal: controller.signal,
-          skipAuthRedirect: true,
         });
         if (!response.ok) return;
         const payload = (await response.json()) as {

@@ -43,10 +43,6 @@ import {
 import { hasPendingAskUserInMessages } from "@/lib/ask-user-state";
 import { notify } from "@/lib/notifications";
 import i18n from "i18next";
-import {
-  normalizeBookReferences,
-  type BookReferencePayload,
-} from "@/lib/book-references";
 
 type SessionRuntimeStatus =
   | "idle"
@@ -79,7 +75,6 @@ export interface SendMessageOptions {
   displayUserMessage?: boolean;
   persistUserMessage?: boolean;
   requestSnapshotOverride?: MessageRequestSnapshot;
-  bookReferences?: BookReferencePayload[];
   /** Edit-branching: when set, the new user message is inserted as a
    *  sibling under this parent rather than appended to the session tail.
    *  ``null`` means "explicitly attach to the session root". */
@@ -142,7 +137,6 @@ export interface MessageRequestSnapshot {
   notebookReferences?: NotebookReferencePayload[];
   historyReferences?: HistoryReferencePayload;
   questionNotebookReferences?: QuestionNotebookReferencePayload;
-  bookReferences?: BookReferencePayload[];
   persona?: string;
   memoryReferences?: MemoryReferencePayload;
   llmSelection?: LLMSelection | null;
@@ -968,7 +962,6 @@ function hydrateRequestSnapshot(
       ? stored.persona
       : "";
   const memoryReferences = asMemoryReferences(stored.memoryReferences);
-  const bookReferences = normalizeBookReferences(stored.bookReferences);
   const llmSelection = asLLMSelection(stored.llmSelection);
 
   if (config && Object.keys(config).length) snapshot.config = config;
@@ -978,7 +971,6 @@ function hydrateRequestSnapshot(
   if (questionNotebookReferences.length) {
     snapshot.questionNotebookReferences = questionNotebookReferences;
   }
-  if (bookReferences.length) snapshot.bookReferences = bookReferences;
   if (persona) snapshot.persona = persona;
   if (memoryReferences.length) snapshot.memoryReferences = memoryReferences;
   if (llmSelection) snapshot.llmSelection = llmSelection;
@@ -1523,8 +1515,6 @@ export function UnifiedChatProvider({
         replaySnapshot?.persona ?? persona ?? session.personaSelection ?? "";
       const effectiveMemoryReferences =
         replaySnapshot?.memoryReferences ?? memoryReferences;
-      const effectiveBookReferences =
-        replaySnapshot?.bookReferences ?? options?.bookReferences;
       const effectiveAttachments =
         replaySnapshot?.attachments?.map((a) => ({
           type: a.type,
@@ -1565,9 +1555,6 @@ export function UnifiedChatProvider({
                 ...effectiveQuestionNotebookReferences,
               ],
             }
-          : {}),
-        ...(effectiveBookReferences?.length
-          ? { bookReferences: effectiveBookReferences }
           : {}),
         ...(effectivePersona ? { persona: effectivePersona } : {}),
         ...(effectiveMemoryReferences?.length
@@ -1633,9 +1620,6 @@ export function UnifiedChatProvider({
           ? {
               question_notebook_references: effectiveQuestionNotebookReferences,
             }
-          : {}),
-        ...(effectiveBookReferences?.length
-          ? { book_references: effectiveBookReferences }
           : {}),
         // Always sent (possibly ""): an explicit key is the backend's signal
         // to persist the value into session.preferences — "" clears back to

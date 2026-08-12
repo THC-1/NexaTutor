@@ -29,7 +29,6 @@ import {
   Activity,
   AlertCircle,
   ArrowRight,
-  Compass,
   Download,
   ExternalLink,
   FileUp,
@@ -52,7 +51,6 @@ import {
 import QuizFollowupTabBody from "@/components/quiz/QuizFollowupTabBody";
 import SubagentTabBody from "@/components/chat/home/SubagentTabBody";
 import type { QuizFollowupTabContext } from "@/context/QuizFollowupContext";
-import type { GeogebraTabPayload } from "@/context/GeogebraTabContext";
 import { apiUrl } from "@/lib/api";
 import type { MessageAttachment } from "@/context/UnifiedChatContext";
 import type { StreamEvent } from "@/lib/unified-ws";
@@ -84,10 +82,6 @@ const OfficeTextPreview = dynamic(
 const FallbackPreview = dynamic(
   () => import("@/components/chat/preview/previewers/FallbackPreview"),
 );
-const Geogebra = dynamic(() => import("@/components/Geogebra"), {
-  ssr: false,
-});
-
 const ANIM_MS = 220;
 
 /* Resizable width — the panel overlays from the right and the chat shell
@@ -112,7 +106,6 @@ function clampViewerWidth(px: number): number {
       : VIEWER_WIDTH_MAX;
   return Math.round(Math.max(VIEWER_WIDTH_MIN, Math.min(px, ceiling)));
 }
-
 function readStoredViewerWidth(): number {
   if (typeof window === "undefined") return VIEWER_WIDTH_DEFAULT;
   const raw = window.localStorage.getItem(VIEWER_WIDTH_KEY);
@@ -136,12 +129,6 @@ type ViewerTab =
       context: QuizFollowupTabContext;
     }
   | {
-      kind: "geogebra";
-      id: string;
-      label: string;
-      script: string;
-    }
-  | {
       kind: "subagent";
       id: string;
       label: string;
@@ -154,8 +141,6 @@ export interface SessionViewerPanelHandle {
   openWebTab(url: string): void;
   /** Opens (or focuses) the follow-up chat tab for a quiz question. */
   openQuizFollowupTab(context: QuizFollowupTabContext): void;
-  /** Opens (or focuses) an interactive GeoGebra applet tab. */
-  openGeogebraTab(payload: GeogebraTabPayload): void;
   /** Opens (first time) or live-updates a connected subagent's run tab. */
   openSubagentTab(callId: string, label: string, events: StreamEvent[]): void;
   /** Opens the panel and switches to the Activity home (where the
@@ -184,10 +169,6 @@ function webTabIdFor(url: string): string {
 
 function quizFollowupTabIdFor(questionKey: string): string {
   return `quiz-followup:${questionKey}`;
-}
-
-function geogebraTabIdFor(payloadId: string): string {
-  return `geogebra:${payloadId}`;
 }
 
 function subagentTabIdFor(callId: string): string {
@@ -375,39 +356,6 @@ function SessionViewerPanelInner(
     [onAutoOpen],
   );
 
-  const openGeogebraTab = useCallback(
-    (payload: GeogebraTabPayload) => {
-      setTabs((prev) => {
-        const id = geogebraTabIdFor(payload.id);
-        const existingIdx = prev.findIndex((tab) => tab.id === id);
-        if (existingIdx >= 0) {
-          // Refresh the script in case the assistant produced an updated
-          // version under the same payload id (e.g. a refined figure).
-          const refreshed: ViewerTab = {
-            kind: "geogebra",
-            id,
-            label: payload.title || "GeoGebra",
-            script: payload.script,
-          };
-          const next = [...prev];
-          next[existingIdx] = refreshed;
-          setActiveTabId(id);
-          return next;
-        }
-        const next: ViewerTab = {
-          kind: "geogebra",
-          id,
-          label: payload.title || "GeoGebra",
-          script: payload.script,
-        };
-        setActiveTabId(id);
-        return [...prev, next];
-      });
-      onAutoOpen();
-    },
-    [onAutoOpen],
-  );
-
   // A connected subagent's run streams into its own tab. The first call (when
   // the consult starts) reveals + focuses the tab; later calls only refresh its
   // events, so live streaming never yanks the user off whatever they're viewing.
@@ -448,7 +396,6 @@ function SessionViewerPanelInner(
       openFileTab,
       openWebTab,
       openQuizFollowupTab,
-      openGeogebraTab,
       openSubagentTab,
       focusActivityHome,
     }),
@@ -456,7 +403,6 @@ function SessionViewerPanelInner(
       openFileTab,
       openWebTab,
       openQuizFollowupTab,
-      openGeogebraTab,
       openSubagentTab,
       focusActivityHome,
     ],
@@ -571,8 +517,6 @@ function SessionViewerPanelInner(
             key={activeTab.context.questionKey}
             context={activeTab.context}
           />
-        ) : activeTab?.kind === "geogebra" ? (
-          <GeogebraTabBody key={activeTab.id} script={activeTab.script} />
         ) : activeTab?.kind === "subagent" ? (
           <SubagentTabBody
             key={activeTab.id}
@@ -652,9 +596,7 @@ function TabBar({
               ? Globe
               : tab.kind === "quiz-followup"
                 ? MessageSquarePlus
-                : tab.kind === "geogebra"
-                  ? Compass
-                  : Paperclip;
+                : Paperclip;
           return (
             <div
               key={tab.id}
@@ -1052,29 +994,6 @@ function WebTabBody({ url }: { url: string }) {
           </div>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Geogebra tab body                                                  */
-/* ------------------------------------------------------------------ */
-
-/**
- * Renders an interactive GeoGebra applet for a ggbscript payload. The
- * heavy lifting (deployggb.js load + applet mount + evalCommand loop)
- * lives in the shared ``Geogebra`` component; this body just gives it
- * the right size and chrome inside the tab.
- */
-function GeogebraTabBody({ script }: { script: string }) {
-  return (
-    <div className="h-full w-full overflow-auto bg-[var(--card)] p-3">
-      <Geogebra
-        script={script}
-        width={560}
-        height={520}
-        className="m-0 border-0 bg-transparent"
-      />
     </div>
   );
 }

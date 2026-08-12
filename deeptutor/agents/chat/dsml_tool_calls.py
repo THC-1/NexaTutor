@@ -7,7 +7,7 @@ The markup mirrors the ``invoke`` / ``parameter`` dialect but wraps each tag in
 DeepSeek's fullwidth special-token bars, e.g.::
 
     <｜｜DSML｜｜tool_calls>
-      <｜｜DSML｜｜invoke name="exec">
+      <｜｜DSML｜｜invoke name="web_search">
         <｜｜DSML｜｜parameter name="command" string="true">python -c "..."</｜｜DSML｜｜parameter>
       </｜｜DSML｜｜invoke>
     </｜｜DSML｜｜tool_calls>

@@ -35,9 +35,9 @@ type DocumentParsingPayload = {
 };
 
 const PIP_HINT: Record<string, string> = {
-  docling: "pip install deeptutor[parse-docling]",
-  markitdown: "pip install deeptutor[parse-markitdown]",
-  pymupdf4llm: "pip install deeptutor[parse-pymupdf4llm]",
+  docling: "pip install nexatutor[parse-docling]",
+  markitdown: "pip install nexatutor[parse-markitdown]",
+  pymupdf4llm: "pip install nexatutor[parse-pymupdf4llm]",
 };
 
 export default function DocumentParsingSettingsPage() {

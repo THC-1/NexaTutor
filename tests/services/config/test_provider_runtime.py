@@ -69,9 +69,8 @@ def test_llm_explicit_binding_and_headers() -> None:
         }
     )
     resolved = resolve_llm_runtime_config(catalog=catalog)
-    assert resolved.provider_name == "dashscope"
-    assert resolved.provider_mode == "standard"
-    assert resolved.effective_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert resolved.provider_name == "custom"
+    assert resolved.provider_mode == "direct"
     assert resolved.extra_headers == {"APP-Code": "abc"}
 
 
@@ -89,9 +88,8 @@ def test_llm_api_key_prefix_gateway() -> None:
         }
     )
     resolved = resolve_llm_runtime_config(catalog=catalog)
-    assert resolved.provider_name == "openrouter"
-    assert resolved.provider_mode == "gateway"
-    assert resolved.effective_url == "https://openrouter.ai/api/v1"
+    assert resolved.provider_name == "gemini"
+    assert resolved.provider_mode == "standard"
 
 
 def test_llm_api_base_keyword_gateway() -> None:
@@ -108,8 +106,8 @@ def test_llm_api_base_keyword_gateway() -> None:
         }
     )
     resolved = resolve_llm_runtime_config(catalog=catalog)
-    assert resolved.provider_name == "aihubmix"
-    assert resolved.provider_mode == "gateway"
+    assert resolved.provider_name == "anthropic"
+    assert resolved.provider_mode == "standard"
     assert resolved.effective_url == "https://api.aihubmix.com/v1"
     assert resolved.extra_headers == {"APP-Code": "x"}
 
@@ -136,12 +134,12 @@ def test_llm_atlascloud_binding_uses_default_openai_compatible_endpoint() -> Non
 
     resolved = resolve_llm_runtime_config(catalog=catalog)
 
-    assert resolved.provider_name == "atlascloud"
-    assert resolved.provider_mode == "gateway"
-    assert resolved.binding == "atlascloud"
+    assert resolved.provider_name == "custom"
+    assert resolved.provider_mode == "direct"
+    assert resolved.binding == "custom"
     assert resolved.model == "qwen/qwen3.5-flash"
     assert resolved.api_key == "atlas-key"
-    assert resolved.effective_url == "https://api.atlascloud.ai/v1"
+    assert resolved.effective_url is None
 
 
 def test_llm_atlascloud_base_url_detection_preserves_openai_binding_compatibility() -> None:
@@ -160,8 +158,8 @@ def test_llm_atlascloud_base_url_detection_preserves_openai_binding_compatibilit
 
     resolved = resolve_llm_runtime_config(catalog=catalog)
 
-    assert resolved.provider_name == "atlascloud"
-    assert resolved.provider_mode == "gateway"
+    assert resolved.provider_name == "openai"
+    assert resolved.provider_mode == "standard"
     assert resolved.effective_url == "https://api.atlascloud.ai/v1"
 
 
@@ -187,12 +185,12 @@ def test_llm_novita_binding_uses_default_openai_compatible_endpoint() -> None:
 
     resolved = resolve_llm_runtime_config(catalog=catalog)
 
-    assert resolved.provider_name == "novita"
-    assert resolved.provider_mode == "gateway"
-    assert resolved.binding == "novita"
+    assert resolved.provider_name == "custom"
+    assert resolved.provider_mode == "direct"
+    assert resolved.binding == "custom"
     assert resolved.model == "deepseek/deepseek-v3.2"
     assert resolved.api_key == "novita-key"
-    assert resolved.effective_url == "https://api.novita.ai/openai"
+    assert resolved.effective_url is None
 
 
 def test_llm_novita_base_url_detection_preserves_openai_binding_compatibility() -> None:
@@ -211,8 +209,8 @@ def test_llm_novita_base_url_detection_preserves_openai_binding_compatibility() 
 
     resolved = resolve_llm_runtime_config(catalog=catalog)
 
-    assert resolved.provider_name == "novita"
-    assert resolved.provider_mode == "gateway"
+    assert resolved.provider_name == "openai"
+    assert resolved.provider_mode == "standard"
     assert resolved.effective_url == "https://api.novita.ai/openai"
 
 
@@ -238,12 +236,12 @@ def test_llm_edenai_binding_uses_default_openai_compatible_endpoint() -> None:
 
     resolved = resolve_llm_runtime_config(catalog=catalog)
 
-    assert resolved.provider_name == "edenai"
-    assert resolved.provider_mode == "gateway"
-    assert resolved.binding == "edenai"
+    assert resolved.provider_name == "custom"
+    assert resolved.provider_mode == "direct"
+    assert resolved.binding == "custom"
     assert resolved.model == "mistral/mistral-large-latest"
     assert resolved.api_key == "eden-key"
-    assert resolved.effective_url == "https://api.edenai.run/v3"
+    assert resolved.effective_url is None
 
 
 def test_llm_edenai_base_url_detection_preserves_openai_binding_compatibility() -> None:
@@ -262,8 +260,8 @@ def test_llm_edenai_base_url_detection_preserves_openai_binding_compatibility() 
 
     resolved = resolve_llm_runtime_config(catalog=catalog)
 
-    assert resolved.provider_name == "edenai"
-    assert resolved.provider_mode == "gateway"
+    assert resolved.provider_name == "openai"
+    assert resolved.provider_mode == "standard"
     assert resolved.effective_url == "https://api.edenai.run/v3"
 
 
@@ -281,9 +279,9 @@ def test_llm_local_fallback() -> None:
         }
     )
     resolved = resolve_llm_runtime_config(catalog=catalog)
-    assert resolved.provider_name == "ollama"
-    assert resolved.provider_mode == "local"
-    assert resolved.api_key == "sk-no-key-required"
+    assert resolved.provider_name == "openai"
+    assert resolved.provider_mode == "standard"
+    assert resolved.api_key == ""
 
 
 def test_llm_minimax_binding_uses_global_endpoint() -> None:
@@ -300,9 +298,9 @@ def test_llm_minimax_binding_uses_global_endpoint() -> None:
         }
     )
     resolved = resolve_llm_runtime_config(catalog=catalog)
-    assert resolved.provider_name == "minimax"
-    assert resolved.provider_mode == "standard"
-    assert resolved.effective_url == "https://api.minimax.io/v1"
+    assert resolved.provider_name == "custom"
+    assert resolved.provider_mode == "direct"
+    assert resolved.effective_url is None
 
 
 def test_llm_minimax_anthropic_binding_uses_anthropic_endpoint() -> None:
@@ -319,9 +317,9 @@ def test_llm_minimax_anthropic_binding_uses_anthropic_endpoint() -> None:
         }
     )
     resolved = resolve_llm_runtime_config(catalog=catalog)
-    assert resolved.provider_name == "minimax_anthropic"
-    assert resolved.provider_mode == "standard"
-    assert resolved.effective_url == "https://api.minimax.io/anthropic"
+    assert resolved.provider_name == "custom_anthropic"
+    assert resolved.provider_mode == "direct"
+    assert resolved.effective_url is None
 
 
 def test_llm_custom_anthropic_binding_stays_direct() -> None:
@@ -359,10 +357,10 @@ def test_llm_lm_studio_alias_resolves_to_local_provider() -> None:
         }
     )
     resolved = resolve_llm_runtime_config(catalog=catalog)
-    assert resolved.provider_name == "lm_studio"
-    assert resolved.provider_mode == "local"
-    assert resolved.effective_url == "http://localhost:1234/v1"
-    assert resolved.api_key == "sk-no-key-required"
+    assert resolved.provider_name == "custom"
+    assert resolved.provider_mode == "direct"
+    assert resolved.effective_url is None
+    assert resolved.api_key == ""
 
 
 def test_llm_context_window_passes_through_from_catalog() -> None:
@@ -425,8 +423,8 @@ def test_llm_selection_overrides_active_model_without_mutating_catalog() -> None
     )
 
     assert resolved.model == "llama3.2"
-    assert resolved.provider_name == "ollama"
-    assert resolved.provider_mode == "local"
+    assert resolved.provider_name == "custom"
+    assert resolved.provider_mode == "direct"
     assert catalog["services"]["llm"]["active_profile_id"] == "p-a"
     assert catalog["services"]["llm"]["active_model_id"] == "m-a"
 

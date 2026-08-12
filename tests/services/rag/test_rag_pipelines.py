@@ -52,9 +52,8 @@ def fake_service(tmp_path) -> tuple[RAGService, _FakePipeline]:
 
 
 def test_provider_argument_honored_for_known_provider(tmp_path) -> None:
-    """An explicit known provider wins (used at create time); unknown/legacy
-    strings collapse to the default engine."""
-    assert RAGService(kb_base_dir=str(tmp_path), provider="lightrag").provider == "lightrag"
+    """Removed and unknown provider strings collapse to the standard engine."""
+    assert RAGService(kb_base_dir=str(tmp_path), provider="lightrag").provider == "llamaindex"
     assert RAGService(kb_base_dir=str(tmp_path), provider="raganything").provider == "llamaindex"
 
 
@@ -90,7 +89,7 @@ def test_ragservice_routes_provider_from_kb_config_when_metadata_missing(tmp_pat
 
     service = RAGService(kb_base_dir=str(tmp_path))
 
-    assert service._resolve_provider("kb") == "lightrag"
+    assert service._resolve_provider("kb") == "llamaindex"
 
 
 def test_ragservice_prefers_authoritative_config_over_stale_metadata(tmp_path) -> None:
@@ -104,7 +103,7 @@ def test_ragservice_prefers_authoritative_config_over_stale_metadata(tmp_path) -
 
     service = RAGService(kb_base_dir=str(tmp_path))
 
-    assert service._resolve_provider("kb") == "lightrag"
+    assert service._resolve_provider("kb") == "llamaindex"
 
 
 @pytest.mark.asyncio
@@ -153,8 +152,6 @@ async def test_search_forwards_lightrag_native_logs_to_event_sink(
         return original_import_module(name, package)
 
     monkeypatch.setattr(pipeline, "search", search_with_native_log)
-    monkeypatch.setattr(rag_service_module.importlib, "import_module", fake_import_module)
-
     try:
         lightrag_logger.handlers = []
         lightrag_logger.propagate = True

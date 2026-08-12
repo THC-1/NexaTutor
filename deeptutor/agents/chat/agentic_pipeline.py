@@ -42,11 +42,7 @@ from deeptutor.core.trace import (
     new_call_id,
 )
 from deeptutor.knowledge.manifest import KbManifest, render_manifest_note
-from deeptutor.runtime.providers import ToolScope
-from deeptutor.runtime.providers.view import ProviderToolView, build_tool_view
-from deeptutor.runtime.registry.deferred_tools import DeferredToolLoader
 from deeptutor.runtime.registry.tool_registry import get_tool_registry
-from deeptutor.services.cli_apps.models import TOOL_PREFIX as CLI_APP_TOOL_PREFIX
 from deeptutor.services.config import get_chat_params
 from deeptutor.services.llm import (
     get_llm_config,
@@ -56,12 +52,8 @@ from deeptutor.services.llm import (
 )
 from deeptutor.services.llm.context_window import resolve_effective_context_window
 from deeptutor.services.prompt import get_prompt_manager
-from deeptutor.tools.builtin import PARTNER_BUILTIN_TOOL_NAMES
 
 logger = logging.getLogger(__name__)
-
-# Chat memory tools a partner turn replaces with the partner_* variants.
-_PARTNER_SUPPRESSED_TOOLS: tuple[str, ...] = ("read_memory", "write_memory")
 
 
 CHAT_EXCLUDED_TOOLS: set[str] = set()
@@ -70,7 +62,7 @@ CHAT_OPTIONAL_TOOLS = default_optional_tools(excluded=CHAT_EXCLUDED_TOOLS)
 # Generation tools are user-toggleable + grant-gated, but only usable once an
 # admin has configured an active model for the service. Drop them from a turn's
 # tool list when unconfigured so the model never sees a tool that can only error.
-_GENERATION_TOOL_SERVICES: dict[str, str] = {"imagegen": "imagegen", "videogen": "videogen"}
+_GENERATION_TOOL_SERVICES: dict[str, str] = {"imagegen": "imagegen"}
 
 
 def _drop_unconfigured_generation_tools(tools: list[str]) -> list[str]:
@@ -202,13 +194,9 @@ class AgenticChatPipeline:
         self.api_version = getattr(self.llm_config, "api_version", None)
         self.extra_headers = getattr(self.llm_config, "extra_headers", None) or {}
         self.reasoning_effort = getattr(self.llm_config, "reasoning_effort", None)
-        # Process-wide registry. Stays the base for the whole turn; the
-        # per-turn scoped view lives on ``_tool_view`` (see ``tool_lookup``).
+        # Process-wide registry of retained built-in tools.
         self.registry: ToolLookup = get_tool_registry()
         self._usage = UsageTracker(model=self.model)
-        self._tool_view: ProviderToolView | None = None
-        self._deferred_loader: DeferredToolLoader | None = None
-        self._deferred_pool: list[Any] = []
         self._exec_enabled = False
         self._kb_manifests: list[KbManifest] = []
         # The blocks the turn's system prompt was rendered from, kept for the
@@ -273,17 +261,8 @@ class AgenticChatPipeline:
 
     @property
     def tool_lookup(self) -> ToolLookup:
-        """Registry to use for this turn.
-
-        The scoped view once ``_prepare_deferred_tools`` has resolved it —
-        which is what refuses provider tools the caller is not authorised for
-        at dispatch time — and the process registry before that.
-
-        ``getattr`` because tests construct partially-initialised pipelines
-        via ``__new__`` (the same reason the mount flags read that way).
-        """
-        view = getattr(self, "_tool_view", None)
-        return view.registry if view is not None else self.registry
+        """Registry of tools available to this turn."""
+        return self.registry
 
     @property
     def max_rounds(self) -> int:
@@ -324,7 +303,6 @@ class AgenticChatPipeline:
         return self.respond_max_tokens
 
     async def run(self, context: UnifiedContext, stream: StreamBus) -> None:
-        await self._prepare_deferred_tools(context)
         await self._prepare_kb_manifests(context)
         self._exec_enabled = await self._exec_allowed(context)
         enabled_tools = self._compose_enabled_tools(context)
@@ -332,9 +310,6 @@ class AgenticChatPipeline:
         tool_schemas = (
             self._build_llm_tool_schemas(enabled_tools, context) if use_native_tools else None
         )
-        if tool_schemas is not None and self._tool_view is not None:
-            self._tool_view.attach(tool_schemas)
-
         loop = AgentLoop(
             pipeline=self,
             context=context,
@@ -361,9 +336,7 @@ class AgenticChatPipeline:
             context=context,
             tool_manifest=self._tool_manifest(enabled_tools),
             kb_note=self._kb_system_note(context),
-            deferred_tools_manifest=(
-                self._deferred_tools_manifest() if include_tool_manifest else ""
-            ),
+            deferred_tools_manifest="",
             notebook_manifest=self._build_notebook_manifest(),
             workspace_note=self._workspace_system_note(context),
             capability_blocks=self._capability_system_blocks(context),
@@ -419,10 +392,6 @@ class AgenticChatPipeline:
 
     def _tool_manifest(self, enabled_tools: list[str]) -> str:
         names = list(enabled_tools)
-        if self._deferred_loader is not None:
-            for name in sorted(self._deferred_loader.loaded_names):
-                if name not in names:
-                    names.append(name)
         try:
             return self.tool_lookup.build_prompt_text(
                 names,
@@ -456,142 +425,22 @@ class AgenticChatPipeline:
             model=self.model,
         ).messages
 
-    # ---- deferred tools / tool composition ------------------------------
-
-    @staticmethod
-    def _is_partner_turn(context: UnifiedContext) -> bool:
-        """Whether this turn runs under a partner's synthetic scope.
-
-        A partner turn executes as a synthetic non-admin user but acts as the
-        admin owner's extension. Authorization for these turns travels through
-        context metadata (the owner-scoped ``mcp_tools_filter`` / exec gate),
-        not the synthetic user's grant file — so callers must bypass real-user
-        grant resolution and defer to that metadata whitelist instead.
-        """
-        return str((context.metadata or {}).get("source") or "") == "partner"
-
-    async def _prepare_deferred_tools(self, context: UnifiedContext) -> None:
-        """Resolve this turn's external-provider (MCP / CLI) tool surface.
-
-        The policy — grant intersection, resource-derived grants, filtering,
-        the progressive-disclosure loader, the manifest — lives in
-        ``runtime.providers``. All the pipeline owns is translating the turn's
-        context into a :class:`ToolScope`.
-        """
-        self._pageindex_docs = self._pageindex_doc_maps(context)
-        try:
-            view = await build_tool_view(
-                base_registry=self.registry,
-                scope=self._tool_scope(context),
-                language=self.language,
-                refusal_message=self._t(
-                    "notices.tool_not_available",
-                    default=(
-                        "This tool is not available in this conversation. Only "
-                        "the tools listed in the prompt can be called."
-                    ),
-                ),
-            )
-        except Exception:
-            # ``build_tool_view`` is contractually non-raising; this is defence
-            # in depth because it is the turn's first await — a failure here
-            # would kill the turn before a single stream event is emitted.
-            logger.warning("deferred-tool preparation failed", exc_info=True)
-            view = ProviderToolView.empty(self.registry)
-        self._tool_view = view
-        self._deferred_loader = view.loader
-        # Kept as a plain list: the context-budget chip counts the provider
-        # tools whose schemas never entered the window.
-        self._deferred_pool = list(view.pool)
-
-    def _tool_scope(self, context: UnifiedContext) -> ToolScope:
-        """Per-turn policy inputs for the provider layer."""
-        from deeptutor.services.mcp.pageindex_server import PAGEINDEX_SERVER_NAME
-
-        raw_filter = context.metadata.get("mcp_tools_filter")
-        return ToolScope(
-            owner_id=self._current_owner_id(),
-            is_partner=self._is_partner_turn(context),
-            session_id=context.session_id,
-            caller_whitelist=(
-                frozenset(str(name) for name in raw_filter)
-                if isinstance(raw_filter, list)
-                else None
-            ),
-            # Attaching a PageIndex knowledge base authorises that server:
-            # access to the KB *is* the permission, and its tools are preloaded
-            # so retrieval works without a load_tools round-trip.
-            implicit_provider_ids=(
-                frozenset({PAGEINDEX_SERVER_NAME}) if self._pageindex_docs else frozenset()
-            ),
-            exclusive_capability=self._exclusive_capability_active(context),
-        )
-
-    def _pageindex_doc_maps(self, context: UnifiedContext) -> dict[str, dict[str, str]]:
-        """kb_name -> {file: doc_id} for bound KBs on the pageindex provider."""
-        out: dict[str, dict[str, str]] = {}
-        for kb in self._selected_kbs(context):
-            try:
-                from deeptutor.multi_user.knowledge_access import resolve_kb
-                from deeptutor.services.rag.factory import PAGEINDEX_PROVIDER
-                from deeptutor.services.rag.pipelines.pageindex.pipeline import PageIndexPipeline
-                from deeptutor.services.rag.provider_binding import resolve_bound_provider
-
-                resource = resolve_kb(kb, require_write=False)
-                base_dir = str(resource.base_dir)
-                if resolve_bound_provider(base_dir, resource.name) != PAGEINDEX_PROVIDER:
-                    continue
-                out[kb] = PageIndexPipeline(kb_base_dir=base_dir).document_map(resource.name)
-            except Exception:
-                logger.debug("pageindex doc-map resolution failed for %r", kb, exc_info=True)
-        return out
-
-    def _deferred_tools_manifest(self) -> str:
-        view = getattr(self, "_tool_view", None)
-        return view.manifest if view is not None else ""
-
     async def _exec_allowed(self, context: UnifiedContext) -> bool:
         try:
             from deeptutor.services.sandbox import IsolationLevel, get_sandbox_service
 
-            # A partner turn runs as a synthetic non-admin user but IS the admin
-            # owner's extension (partners are anchored to the admin workspace), so
-            # exec follows the owner's authority — not the partner's "user" role.
-            # The owner still gates exec per-partner via the builtin-tool whitelist.
-            is_partner = self._is_partner_turn(context)
-
             level = await get_sandbox_service().isolation_level()
-            if level is IsolationLevel.SYSTEM:
-                # Admin can switch exec off per user (grant v2). ``None``
-                # follows the policy: SYSTEM isolation serves everyone.
-                from deeptutor.multi_user.tool_access import exec_override
-
-                return exec_override() is not False
-            if level is IsolationLevel.APPLICATION:
-                if is_partner:
-                    return True
-                try:
-                    from deeptutor.multi_user.context import get_current_user
-
-                    return bool(get_current_user().is_admin)
-                except Exception:
-                    # Single-user local runtime: APPLICATION isolation is the
-                    # same explicit opt-in posture TutorBot uses for local dev.
-                    return True
-            return False
+            return level is IsolationLevel.SYSTEM
         except Exception:
             logger.warning("exec policy gate failed; disabling exec", exc_info=True)
             return False
 
     def _compose_enabled_tools(self, context: UnifiedContext) -> list[str]:
-        is_partner = self._is_partner_turn(context)
         composed = compose_enabled_tools(
             registry=self.tool_lookup,
             requested_tools=context.enabled_tools,
             optional_whitelist=CHAT_OPTIONAL_TOOLS,
             mount_flags=ToolMountFlags(
-                # PageIndex KBs are read via the preloaded MCP tools, not rag —
-                # a conversation with only PageIndex KBs doesn't mount rag at all.
                 # Excludes KBs owned by an exclusive capability (an Obsidian vault
                 # is read via its own tools, never rag) so a pure-vault turn still
                 # doesn't mount rag, while co-selected LlamaIndex KBs do (#650).
@@ -603,9 +452,7 @@ class AgenticChatPipeline:
                 has_memory=user_has_memory(),
                 has_notebooks=user_has_notebooks(),
                 has_skills=bool(context.skills_manifest),
-                has_deferred_tools=getattr(self, "_deferred_loader", None) is not None,
-                has_exec=getattr(self, "_exec_enabled", False),
-                has_code=getattr(self, "_exec_enabled", False),
+                has_deferred_tools=False,
             ),
             capability_owned=self._capability_owned_tools(context),
             exclusive=self._exclusive_capability_active(context),
@@ -614,12 +461,9 @@ class AgenticChatPipeline:
                 if context.allowed_builtin_tools is not None
                 else None
             ),
-            # Partners get the partner_* memory/history tools force-mounted and
-            # chat's read_memory/write_memory suppressed — the split-memory model
-            # (own workspace writable, owner's memory read-only) lives in those
-            # tools, not in chat's.
-            forced=PARTNER_BUILTIN_TOOL_NAMES if is_partner else (),
-            suppressed=_PARTNER_SUPPRESSED_TOOLS if is_partner else (),
+            suppressed=(
+                () if getattr(self, "_exec_enabled", False) else ("code_execution",)
+            ),
         )
         return _drop_unconfigured_generation_tools(composed)
 
@@ -717,11 +561,6 @@ class AgenticChatPipeline:
                     properties["query"].setdefault("minLength", 1)
                 if isinstance(properties.get("kb_name"), dict):
                     properties["kb_name"]["enum"] = kb_choices
-            if function.get("name") == "geogebra_analysis" and isinstance(properties, dict):
-                properties.pop("image_base64", None)
-                required = parameters.get("required")
-                if isinstance(required, list):
-                    parameters["required"] = [n for n in required if n != "image_base64"]
             if (
                 function.get("name") in {"list_notebook", "write_note"}
                 and isinstance(properties, dict)
@@ -927,7 +766,6 @@ class AgenticChatPipeline:
         task_dir = (
             get_path_service().get_task_workspace("chat", workspace_key) if workspace_key else None
         )
-        exec_dir = task_dir / "exec" if task_dir is not None else None
         if tool_name == "rag":
             kwargs.setdefault("mode", "hybrid")
         elif tool_name == "kb_files":
@@ -935,34 +773,6 @@ class AgenticChatPipeline:
             # written in the turn's language. Injected server-side; the tool
             # exposes no ``language`` parameter for the model to get wrong.
             kwargs["language"] = context.language or "en"
-        elif tool_name == "load_tools":
-            kwargs["_tool_loader"] = self._deferred_loader
-        elif tool_name == "exec":
-            from deeptutor.services.sandbox import Mount
-
-            kwargs["_sandbox_user_id"] = self._current_user_id()
-            if exec_dir is not None:
-                exec_dir.mkdir(parents=True, exist_ok=True)
-                kwargs["_sandbox_workdir"] = str(exec_dir)
-                kwargs["_sandbox_mounts"] = (
-                    Mount(host_path=str(exec_dir), sandbox_path=str(exec_dir), read_only=False),
-                )
-        elif tool_name.startswith(CLI_APP_TOOL_PREFIX):
-            # A CLI app runs like exec, and for the same reason gets its workdir
-            # from here rather than choosing one: one directory per turn shared by
-            # every app, so the model can render with one and post-process with
-            # another, and the files land where /api/outputs will serve them
-            # (``PathService.is_public_output_path`` has the matching branch).
-            from deeptutor.services.sandbox import Mount
-
-            kwargs["_sandbox_user_id"] = self._current_user_id()
-            cli_dir = task_dir / "cli" if task_dir is not None else None
-            if cli_dir is not None:
-                cli_dir.mkdir(parents=True, exist_ok=True)
-                kwargs["_sandbox_workdir"] = str(cli_dir)
-                kwargs["_sandbox_mounts"] = (
-                    Mount(host_path=str(cli_dir), sandbox_path=str(cli_dir), read_only=False),
-                )
         elif tool_name == "code_execution":
             from deeptutor.services.sandbox import Mount
 
@@ -974,7 +784,7 @@ class AgenticChatPipeline:
                 kwargs["_sandbox_mounts"] = (
                     Mount(host_path=str(code_dir), sandbox_path=str(code_dir), read_only=False),
                 )
-        elif tool_name in ("imagegen", "videogen"):
+        elif tool_name == "imagegen":
             # Generated media lands in the turn's public workspace so it
             # surfaces as a download card via /api/outputs (same convention as
             # exec/code_execution artifacts).
@@ -982,38 +792,6 @@ class AgenticChatPipeline:
             if media_dir is not None:
                 media_dir.mkdir(parents=True, exist_ok=True)
                 kwargs["_workspace_dir"] = str(media_dir)
-        elif tool_name == "cron":
-            # Owner routing is supplied server-side — the model never picks
-            # where a scheduled task's output lands.
-            meta = context.metadata or {}
-            cron_job_id = str(meta.get("cron_job_id") or meta.get("_cron_job_id") or "")
-            kwargs["_cron_in_context"] = bool(
-                cron_job_id or str(meta.get("source") or "") == "cron"
-            )
-            if self._is_partner_turn(context):
-                channel_meta = meta.get("channel_metadata")
-                kwargs["_cron_owner"] = {
-                    "kind": "partner",
-                    "partner_id": str(meta.get("partner_id") or ""),
-                    "channel": str(meta.get("channel") or ""),
-                    "chat_id": str(meta.get("chat_id") or ""),
-                    "session_key": str(meta.get("session_key") or ""),
-                    "channel_meta": dict(channel_meta) if isinstance(channel_meta, dict) else {},
-                    "language": context.language or "en",
-                }
-            else:
-                from deeptutor.multi_user.context import get_current_user
-
-                user = get_current_user()
-                kwargs["_cron_owner"] = {
-                    "kind": "chat",
-                    "user_id": user.id,
-                    "is_admin": user.is_admin,
-                    "session_id": context.session_id,
-                    "language": context.language or "en",
-                }
-        elif tool_name in {"reason", "brainstorm"}:
-            kwargs.setdefault("context", context.user_message)
         elif tool_name == "paper_search":
             kwargs.setdefault("max_results", 3)
             kwargs.setdefault("years_limit", 3)
@@ -1025,23 +803,6 @@ class AgenticChatPipeline:
         elif tool_name == "write_note":
             kwargs["conversation_history"] = list(context.conversation_history or [])
             kwargs["current_user_message"] = context.user_message or ""
-        elif tool_name == "geogebra_analysis":
-            first_image = next(
-                (
-                    att
-                    for att in (context.attachments or [])
-                    if getattr(att, "type", "") == "image" and getattr(att, "base64", "")
-                ),
-                None,
-            )
-            if first_image is not None:
-                raw_b64 = first_image.base64
-                if raw_b64.startswith("data:"):
-                    kwargs["image_base64"] = raw_b64
-                else:
-                    mime = getattr(first_image, "mime_type", "") or "image/png"
-                    kwargs["image_base64"] = f"data:{mime};base64,{raw_b64}"
-            kwargs["language"] = context.language or "zh"
         for cap in self._active_loop_capabilities(context):
             kwargs = cap.augment_kwargs(tool_name, kwargs, context)
         return kwargs
@@ -1069,7 +830,7 @@ class AgenticChatPipeline:
         # (``execute_tool_call``), so a long-running tool no longer has to pose
         # as a retrieval to stream its progress. What it still needs from here
         # is the call_kind the frontend renders it by.
-        if tool_name in ("imagegen", "videogen"):
+        if tool_name == "imagegen":
             return derive_trace_metadata(
                 tool_meta,
                 label=self._t("labels.tool_call", default="Tool call"),
@@ -1272,29 +1033,13 @@ class AgenticChatPipeline:
         Measured after the fact from what was actually sent — never a dry run.
         Returns ``None`` when the measurement fails, so the turn is unaffected.
         """
-        loaded = self._deferred_loader.loaded_names if self._deferred_loader is not None else set()
         return build_context_budget(
             blocks=self._last_prompt_blocks,
             request=request,
             model=str(self.model or ""),
             context_window=getattr(self.llm_config, "context_window", None),
             max_tokens=getattr(self.llm_config, "max_tokens", None),
-            loaded_deferred_names=loaded,
-            deferred_tool_count=self._unloaded_deferred_tool_count(loaded),
         )
-
-    def _unloaded_deferred_tool_count(self, loaded: set[str]) -> int:
-        """Extended tools whose full schemas never entered the window.
-
-        They cost only their manifest line (the ``extended_tools`` block), so
-        they are reported as a scalar rather than as a segment.
-        """
-        try:
-            pool = getattr(self, "_deferred_pool", None) or []
-            return sum(1 for tool in pool if tool.get_definition().name not in loaded)
-        except Exception:
-            logger.debug("deferred-tool count probe failed", exc_info=True)
-            return 0
 
     @staticmethod
     def _estimate_messages_tokens(messages: list[dict[str, Any]]) -> int:
@@ -1333,38 +1078,23 @@ class AgenticChatPipeline:
     @staticmethod
     def _current_user_id() -> str:
         try:
-            from deeptutor.multi_user.context import get_current_user
+            from deeptutor.services.local_workspace import get_local_user
 
-            return str(get_current_user().id or "anonymous")
+            return str(get_local_user().id)
         except Exception:
             return "anonymous"
 
     @staticmethod
     def _current_owner_id() -> str:
-        """Id of the owning account — NOT the same as ``_current_user_id``.
-
-        A partner resolves to the person who owns it and an administrator to the
-        deployment id, which is how owner-keyed state (a caller's own MCP
-        servers and their credentials) is addressed everywhere else. Using the
-        raw current-user id here would have an admin's self-configured servers
-        written under one name and read under another.
-        """
-        try:
-            from deeptutor.multi_user.paths import current_owner_id
-
-            return current_owner_id()
-        except Exception:
-            logger.debug("owner id resolution failed", exc_info=True)
-            return ""
+        return "local"
 
     @staticmethod
     def _selected_kbs(context: UnifiedContext) -> list[str]:
         return [str(kb).strip() for kb in context.knowledge_bases if str(kb).strip()]
 
     def _rag_kbs(self, context: UnifiedContext) -> list[str]:
-        """Attached KBs served by the rag tool (PageIndex KBs are read via MCP)."""
-        pageindex = getattr(self, "_pageindex_docs", None) or {}
-        return [kb for kb in self._selected_kbs(context) if kb not in pageindex]
+        """Attached KBs served by the rag tool."""
+        return self._selected_kbs(context)
 
     def _capability_owned_kbs(self, context: UnifiedContext) -> set[str]:
         """Selected KBs consumed by an active capability's own tools (not rag).
@@ -1421,7 +1151,7 @@ class AgenticChatPipeline:
                     "must be one of these names."
                 )
             )
-        return rag_note + self._kb_manifest_system_note() + self._pageindex_system_note()
+        return rag_note + self._kb_manifest_system_note()
 
     async def _prepare_kb_manifests(self, context: UnifiedContext) -> None:
         """Read the attached KBs' document inventories once per turn.
@@ -1433,9 +1163,8 @@ class AgenticChatPipeline:
         keeps the prompt byte-stable for the whole turn and makes counts
         answerable without a tool round-trip.
 
-        PageIndex KBs are excluded: ``_pageindex_system_note`` already lists
-        their documents, with the doc_ids its MCP tools need. Fails soft — a KB
-        whose files cannot be read costs the manifest, not the turn.
+        Fails soft — a KB whose files cannot be read costs the manifest, not the
+        turn.
         """
         self._kb_manifests = []
         kbs = self._rag_kbs(context)
@@ -1448,7 +1177,7 @@ class AgenticChatPipeline:
 
     @staticmethod
     def _collect_kb_manifests(kbs: list[str]) -> list[KbManifest]:
-        from deeptutor.multi_user.knowledge_access import resolve_kb_manifest
+        from deeptutor.services.local_workspace import resolve_kb_manifest
 
         manifests: list[KbManifest] = []
         for kb in kbs:
@@ -1468,70 +1197,8 @@ class AgenticChatPipeline:
         note = render_manifest_note(self._kb_manifests, language=self.language)
         return f"\n{note}" if note else ""
 
-    def _pageindex_system_note(self) -> str:
-        """Doc list + retrieval instructions for attached PageIndex KBs.
-
-        Populated by ``_prepare_deferred_tools`` once per turn, so the system
-        prompt stays byte-stable for the whole turn (KB cache prefix).
-        """
-        doc_maps = getattr(self, "_pageindex_docs", None) or {}
-        if not doc_maps:
-            return ""
-        lines = []
-        for kb, doc_map in sorted(doc_maps.items()):
-            listed = "; ".join(
-                f"{name} (doc_id: {doc_id})" for name, doc_id in sorted(doc_map.items())
-            )
-            lines.append(f"- {kb}: {listed or '(no indexed documents)'}")
-        docs_block = "\n".join(lines)
-        if self.language == "zh":
-            return (
-                "\n以下知识库使用托管的 PageIndex 引擎，其文档通过已加载的 "
-                "PageIndex MCP 工具阅读：先用 mcp_pageindex_get_document_structure "
-                "查看结构，再用 mcp_pageindex_get_page_content 读取相关页面。文档清单：\n"
-                f"{docs_block}"
-            )
-        return (
-            "\nThe following knowledge bases are on the hosted PageIndex engine; read "
-            "their documents with the preloaded PageIndex MCP tools: "
-            "mcp_pageindex_get_document_structure for the outline, then "
-            "mcp_pageindex_get_page_content for the relevant pages. Documents:\n"
-            f"{docs_block}"
-        )
-
     def _workspace_system_note(self, context: UnifiedContext) -> str:
-        if not getattr(self, "_exec_enabled", False):
-            return ""
-        try:
-            from deeptutor.services.path_service import get_path_service
-
-            exec_dir = (
-                get_path_service().get_task_workspace(
-                    "chat",
-                    self._workspace_key(context),
-                )
-                / "exec"
-            )
-        except Exception:
-            return ""
-        if self.language == "zh":
-            return (
-                "[本轮工作区]\n"
-                f"脚本和临时文件应写入：{exec_dir}\n"
-                "相对路径会解析到这个目录。需要创建 PDF、图片、表格或其他下载文件时，"
-                "直接通过 exec 写入并运行脚本（如 heredoc：python - <<'PY' … PY，"
-                "或 cat > gen.py <<'EOF' … EOF 后再运行）。生成的文件会自动以可下载"
-                "卡片呈现给用户——在回答里描述你做了什么即可，不要粘贴原始 URL。"
-            )
-        return (
-            "[Turn workspace]\n"
-            f"Scripts and temporary files should be written under: {exec_dir}\n"
-            "Relative paths resolve to this directory. When creating PDFs, images, "
-            "spreadsheets, or other downloadable files, write and run scripts directly "
-            "through exec (e.g. a heredoc: python - <<'PY' … PY, or cat > gen.py <<'EOF' "
-            "… EOF then run it). Generated files are shown to the user automatically as "
-            "downloadable cards — describe what you made, do not paste raw URLs."
-        )
+        return ""
 
     def _t(self, key: str, default: str = "", **kwargs: Any) -> str:
         value: Any = self._prompts

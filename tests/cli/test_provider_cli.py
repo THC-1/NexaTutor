@@ -13,27 +13,24 @@ ROOT_README = (ROOT / "README.md").read_text(encoding="utf-8")
 
 
 class ProviderCliDocsContractTest(unittest.TestCase):
-    def test_provider_contract_describes_copilot_as_validation_not_oauth_login(self) -> None:
+    def test_provider_login_only_supports_openai_codex(self) -> None:
         self.assertIn(
-            'help="Provider: openai-codex (OAuth login) | github-copilot (validate existing Copilot auth)"',
+            'help="Provider: openai-codex (OAuth login)"',
             PROVIDER_CMD,
         )
-        self.assertIn('"""Authenticate or validate provider access."""', PROVIDER_CMD)
-        self.assertIn("GitHub Copilot auth validation succeeded.", PROVIDER_CMD)
-        self.assertIn("GitHub Copilot auth validation failed:", PROVIDER_CMD)
-        self.assertNotIn("OAuth provider: openai-codex | github-copilot", PROVIDER_CMD)
-        self.assertNotIn("GitHub Copilot OAuth authentication succeeded.", PROVIDER_CMD)
+        self.assertIn('"""Authenticate with OpenAI Codex."""', PROVIDER_CMD)
+        self.assertNotIn("github-copilot", PROVIDER_CMD)
+        self.assertNotIn("github_copilot", PROVIDER_CMD)
+        self.assertNotIn("GitHub Copilot", PROVIDER_CMD)
 
     def test_readmes_match_the_cli_contract(self) -> None:
-        self.assertIn(
-            "Provider 认证兼容入口：`openai-codex` 执行 OAuth 登录，`github-copilot` 只校验已有 Copilot 认证。",
-            ROOT_README,
-        )
-        self.assertIn(
-            "deeptutor provider login github-copilot    # 校验现有 GitHub Copilot 认证是否可用",
-            CLI_README,
-        )
-        self.assertNotIn("OAuth login (`openai-codex`, `github-copilot`)", ROOT_README)
+        self.assertIn("Provider 认证入口只保留 `openai-codex` OAuth 登录。", ROOT_README)
+        self.assertIn("nexatutor provider login openai-codex", CLI_README)
+        self.assertNotIn("deeptutor provider login openai-codex", CLI_README)
+        self.assertNotIn("github-copilot", ROOT_README)
+        self.assertNotIn("GitHub Copilot", ROOT_README)
+        self.assertNotIn("github-copilot", CLI_README)
+        self.assertNotIn("GitHub Copilot", CLI_README)
 
 
 class _FakeCliCodexService:
@@ -70,6 +67,14 @@ def test_openai_codex_cli_does_not_import_codex_cli_credentials() -> None:
     assert "get_codex_oauth_service" in PROVIDER_CMD
     assert "~/.codex" not in PROVIDER_CMD
     assert "Path.home" not in PROVIDER_CMD
+
+
+def test_github_copilot_login_is_rejected() -> None:
+    result = CliRunner().invoke(app, ["provider", "login", "github-copilot"])
+
+    assert result.exit_code != 0
+    assert "Unknown provider `github-copilot`. Supported: openai-codex" in result.output
+    assert "validation succeeded" not in result.output
 
 
 def test_cli_opens_authorize_url_and_waits_for_completion(monkeypatch) -> None:

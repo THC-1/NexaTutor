@@ -1,15 +1,8 @@
-"""Configurable-tool surface shared by the partners and multi-user admin APIs.
+"""Configurable-tool surface for the multi-user admin API.
 
 ``tools`` mirrors the user-toggleable system tools (the same pool the chat
 composer / settings expose); ``builtin_tools`` lists the auto-mounted built-in
-tools (rag / read_memory / web_fetch / …) a partner owner can selectively
-allow or deny; ``mcp_tools`` lists every configured MCP tool that a whitelist
-(partner config or user grant) could allow.
-
-Each ``mcp_tools`` row carries its provider identity — ``kind`` (``"mcp"``
-today) and ``provider_id`` (the server name) — so the pickers can fold
-hundreds of tools into one row per service. ``server`` is the pre-provider
-spelling of ``provider_id`` and stays populated for existing clients.
+tools (rag / read_memory / web_fetch / …) an administrator can allow or deny.
 """
 
 from __future__ import annotations
@@ -28,13 +21,9 @@ async def build_tool_options(
 ) -> dict[str, list[dict[str, Any]]]:
     """Build the configurable-tool surface.
 
-    ``exclude_builtin`` drops built-in tools from the ``builtin_tools`` list —
-    the partners API passes ``{"read_memory", "write_memory"}`` because partners
-    use the mandatory ``partner_*`` memory tools instead and cannot configure
-    chat's memory tools.
+    ``exclude_builtin`` drops named tools from the ``builtin_tools`` list.
     """
     from deeptutor.agents._shared.tool_composition import default_optional_tools
-    from deeptutor.runtime.registry.deferred_tools import provider_identity
     from deeptutor.runtime.registry.tool_registry import get_tool_registry
     from deeptutor.tools.builtin import CONFIGURABLE_BUILTIN_TOOL_NAMES
 
@@ -42,13 +31,6 @@ async def build_tool_options(
 
     registry = get_tool_registry()
     language = current_language()
-    try:
-        from deeptutor.services.mcp import get_mcp_manager
-
-        await get_mcp_manager().ensure_started()
-    except Exception:
-        logger.debug("MCP manager unavailable for tool options", exc_info=True)
-
     def _describe(name: str) -> dict[str, Any]:
         tool = registry.get(name)
         description = ""
@@ -69,39 +51,7 @@ async def build_tool_options(
         _describe(name) for name in CONFIGURABLE_BUILTIN_TOOL_NAMES if name not in exclude
     ]
 
-    # Only MCP rows belong in ``mcp_tools``: that list is written into
-    # ``grant.mcp_tools`` / a partner's ``mcp_tools``, and per
-    # ``runtime.providers.authorize`` a CLI app must be governed by its own grant
-    # field instead — collapsing the two is exactly how a CLI app ends up
-    # authorised by an MCP whitelist. CLI providers get their own list when they
-    # land; until then they are simply not offered here.
-    mcp_tools: list[dict[str, Any]] = []
-    for tool in registry.deferred_tools():
-        try:
-            definition = tool.get_definition()
-        except Exception:
-            continue
-        kind, provider_id = provider_identity(tool)
-        if (kind or "mcp") != "mcp":
-            continue
-        mcp_tools.append(
-            {
-                "name": definition.name,
-                # Adapters written before ``provider_kind`` existed are all MCP,
-                # so an absent kind means "mcp" rather than "unknown".
-                "kind": kind or "mcp",
-                "provider_id": provider_id,
-                # Legacy alias — drop once no client reads ``server``.
-                "server": provider_id,
-                "description": definition.description or "",
-                "description_i18n": {
-                    "en": definition.description or "",
-                    "zh": definition.description or "",
-                },
-            }
-        )
-
-    return {"tools": tools, "builtin_tools": builtin_tools, "mcp_tools": mcp_tools}
+    return {"tools": tools, "builtin_tools": builtin_tools}
 
 
 __all__ = ["build_tool_options"]

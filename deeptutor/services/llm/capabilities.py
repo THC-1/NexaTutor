@@ -39,15 +39,6 @@ PROVIDER_CAPABILITIES: dict[str, dict[str, object]] = {
         "system_in_messages": True,
         "has_thinking_tags": False,  # Per-model; MODEL_OVERRIDES handles qwen/deepseek etc.
     },
-    "azure_openai": {
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": True,
-        "system_in_messages": True,
-        "newer_models_use_max_completion_tokens": True,
-        "requires_api_version": True,
-    },
     # Anthropic
     "anthropic": {
         "supports_response_format": False,  # Anthropic uses different format
@@ -76,15 +67,6 @@ PROVIDER_CAPABILITIES: dict[str, dict[str, object]] = {
         "system_in_messages": False,
         "has_thinking_tags": False,
     },
-    "minimax_anthropic": {
-        "supports_response_format": False,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": True,
-        "vision_url_supported": False,
-        "system_in_messages": False,
-        "has_thinking_tags": False,
-    },
     # DeepSeek
     "deepseek": {
         "supports_response_format": False,  # DeepSeek doesn't support strict JSON schema yet
@@ -93,140 +75,6 @@ PROVIDER_CAPABILITIES: dict[str, dict[str, object]] = {
         "supports_vision": False,
         "system_in_messages": True,
         "has_thinking_tags": True,  # DeepSeek reasoner has thinking tags
-    },
-    # SiliconFlow exposes OpenAI-compatible chat completions for hosted models
-    # such as DeepSeek and Qwen; model-specific overrides below still govern
-    # response_format, thinking tags, and vision.
-    "siliconflow": {
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": False,
-        "vision_url_supported": True,
-        "system_in_messages": True,
-        "has_thinking_tags": False,
-    },
-    # VolcEngine Ark (Doubao) and BytePlus — OpenAI-compatible gateways that
-    # host natively multimodal models (Doubao-Vision). ``supports_vision`` is
-    # the Stage-2 fallback hint (see ``multimodal.py``), not a pre-flight gate:
-    # marking these True means a transient failure never causes images to be
-    # silently dropped. The Ark API expects inline base64 image data, so
-    # url-only attachments are resolved to bytes before sending.
-    "volcengine": {
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": True,
-        "vision_url_supported": False,
-        "system_in_messages": True,
-    },
-    "byteplus": {
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": True,
-        "vision_url_supported": False,
-        "system_in_messages": True,
-    },
-    # OpenRouter (aggregator, generally OpenAI-compatible)
-    "openrouter": {
-        "supports_response_format": True,  # Depends on underlying model
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": True,  # Depends on underlying model
-        "system_in_messages": True,
-    },
-    # Groq (fast inference)
-    "groq": {
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": True,
-        "system_in_messages": True,
-    },
-    # Together AI
-    "together": {
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": True,
-        "system_in_messages": True,
-    },
-    "together_ai": {  # Alias
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": True,
-        "system_in_messages": True,
-    },
-    # Mistral
-    "mistral": {
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": True,
-        "system_in_messages": True,
-    },
-    # DashScope / Alibaba Cloud (Qwen family)
-    # Uses OpenAI-compatible API with native function calling support.
-    "dashscope": {
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": False,  # Per-model; set True via MODEL_OVERRIDES
-        "system_in_messages": True,
-        "has_thinking_tags": True,  # Qwen reasoner models emit <think/> tags
-    },
-    # Moonshot / Kimi — vision is per-model (see MODEL_OVERRIDES below).
-    # Per the official docs the image input must be base64-encoded inline; URL
-    # form is rejected. We therefore force the multimodal layer to resolve any
-    # url-only attachment to bytes before sending.
-    "moonshot": {
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": False,
-        "vision_url_supported": False,
-        "system_in_messages": True,
-    },
-    # MiniMax's OpenAI-compatible endpoint supports Chat Completions tools /
-    # function calling for M-series text models. Response-format support is
-    # still disabled by the model override below.
-    "minimax": {
-        "supports_response_format": False,
-        "supports_streaming": True,
-        "supports_tools": True,
-        "supports_vision": False,
-        "system_in_messages": True,
-    },
-    # Local providers (generally OpenAI-compatible)
-    "ollama": {
-        "supports_response_format": True,  # Ollama supports JSON mode
-        "supports_streaming": True,
-        "supports_tools": False,  # Limited tool support
-        "supports_vision": False,  # Depends on model; set True via model overrides
-        "system_in_messages": True,
-    },
-    "lm_studio": {
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": False,
-        "supports_vision": False,
-        "system_in_messages": True,
-    },
-    "vllm": {
-        "supports_response_format": True,
-        "supports_streaming": True,
-        "supports_tools": False,
-        "supports_vision": False,
-        "system_in_messages": True,
-    },
-    "llama_cpp": {
-        "supports_response_format": True,  # llama.cpp server supports JSON grammar
-        "supports_streaming": True,
-        "supports_tools": False,
-        "supports_vision": False,
-        "system_in_messages": True,
     },
 }
 

@@ -32,18 +32,11 @@ from .turn_runtime import TurnRuntimeManager, get_turn_runtime_manager
 
 def get_session_store() -> SessionStoreProtocol:
     """
-    Return the active session store backend.
+    Return the local SQLite session store.
 
-    When integrations.pocketbase_url is configured, returns a
-    PocketBaseSessionStore. Otherwise falls back to the local
-    SQLiteSessionStore (default, zero-config behaviour).
+    NexaTutor has a single local workspace, so the Core session backend cannot
+    be replaced by legacy integration settings.
     """
-    from deeptutor.services.pocketbase_client import is_pocketbase_enabled
-
-    if is_pocketbase_enabled():
-        from .pocketbase_store import PocketBaseSessionStore
-
-        return PocketBaseSessionStore()
     return get_sqlite_session_store()
 
 

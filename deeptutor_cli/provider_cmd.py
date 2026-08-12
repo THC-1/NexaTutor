@@ -1,4 +1,4 @@
-"""CLI commands for provider auth and access validation."""
+"""CLI command for OpenAI Codex authentication."""
 
 from __future__ import annotations
 
@@ -17,20 +17,15 @@ def register(app: typer.Typer) -> None:
     def provider_login(
         provider: str = typer.Argument(
             ...,
-            help="Provider: openai-codex (OAuth login) | github-copilot (validate existing Copilot auth)",
+            help="Provider: openai-codex (OAuth login)",
         ),
     ) -> None:
-        """Authenticate or validate provider access."""
+        """Authenticate with OpenAI Codex."""
         key = provider.strip().lower().replace("-", "_")
         if key == "openai_codex":
             maybe_run(_login_openai_codex())
             return
-        if key == "github_copilot":
-            maybe_run(_login_github_copilot())
-            return
-        raise typer.BadParameter(
-            f"Unknown provider `{provider}`. Supported: openai-codex, github-copilot"
-        )
+        raise typer.BadParameter(f"Unknown provider `{provider}`. Supported: openai-codex")
 
 
 async def _login_openai_codex() -> None:
@@ -43,7 +38,7 @@ async def _login_openai_codex() -> None:
         typer.echo(f"Remote server tunnel command: {started['ssh_forward_command']}")
         typer.echo(
             "Opening the OpenAI Codex sign-in in your browser; "
-            "credentials are written only to DeepTutor's private directory."
+            "credentials are written only to NexaTutor's private directory."
         )
         if not webbrowser.open(authorize_url):
             typer.echo(f"The browser did not open automatically. Visit: {authorize_url}")
@@ -74,30 +69,3 @@ async def _login_openai_codex() -> None:
     except CodexAuthError as exc:
         typer.echo(f"OpenAI Codex sign-in failed: {exc.public_message}")
         raise typer.Exit(code=1)
-
-
-async def _login_github_copilot() -> None:
-    """Validate an existing GitHub Copilot auth session via a lightweight request."""
-    try:
-        from openai import AsyncOpenAI
-    except ImportError:
-        typer.echo(
-            "openai is not installed. Install CLI deps from a local checkout: "
-            "python -m pip install -e ./packaging/deeptutor-cli"
-        )
-        raise typer.Exit(code=1)
-    try:
-        client = AsyncOpenAI(
-            api_key="copilot",
-            base_url="https://api.githubcopilot.com",
-            max_retries=0,
-        )
-        await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": "ping"}],
-            max_tokens=1,
-        )
-    except Exception as exc:
-        typer.echo(f"GitHub Copilot auth validation failed: {exc}")
-        raise typer.Exit(code=1) from exc
-    typer.echo("GitHub Copilot auth validation succeeded.")

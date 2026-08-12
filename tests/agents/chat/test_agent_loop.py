@@ -11,7 +11,7 @@ from deeptutor.agents.chat.agent_loop import InlineThinkFilter
 from deeptutor.agents.chat.agentic_pipeline import AgenticChatPipeline
 from deeptutor.capabilities.explore_context import explorer as explorer_mod
 from deeptutor.capabilities.mastery import MASTERY_TOOL_NAMES
-from deeptutor.core.context import Attachment, UnifiedContext
+from deeptutor.core.context import UnifiedContext
 from deeptutor.core.stream import StreamEvent, StreamEventType
 from deeptutor.core.stream_bus import StreamBus
 from deeptutor.core.tool_protocol import ToolResult
@@ -105,9 +105,6 @@ class _ScriptedChatClient:
 class _Registry:
     def __init__(self) -> None:
         self.executed: list[dict[str, Any]] = []
-
-    def deferred_tools(self):
-        return []
 
     def build_prompt_text(self, _enabled, **_kwargs):
         return "- `web_search` - Search the web"
@@ -917,8 +914,8 @@ def test_compose_enabled_tools_mounts_mastery_plugin_only_in_mastery_mode(
     assert set(MASTERY_TOOL_NAMES).issubset(mastery_tools)
     # Additive plugin surface: a mastery turn reuses chat's full built-in
     # surface (always-on defaults included) and just adds its owned tools.
-    assert {"web_fetch", "github", "cron"}.issubset(mastery_tools)
-    assert {"web_fetch", "github", "cron"}.issubset(ordinary_tools)
+    assert "web_fetch" in mastery_tools
+    assert "web_fetch" in ordinary_tools
 
 
 def test_augment_tool_kwargs_injects_mastery_path_id() -> None:
@@ -931,32 +928,6 @@ def test_augment_tool_kwargs_injects_mastery_path_id() -> None:
     augmented = pipeline._augment_tool_kwargs("mastery_status", {}, context)
 
     assert augmented["_mastery_path_id"] == "book-1"
-
-
-def test_augment_tool_kwargs_injects_geogebra_image() -> None:
-    pipeline = AgenticChatPipeline.__new__(AgenticChatPipeline)
-    pipeline.language = "zh"
-    context = UnifiedContext(
-        user_message="solve this triangle",
-        attachments=[
-            Attachment(
-                type="image",
-                base64="REAL_IMG_BYTES",
-                filename="problem.png",
-                mime_type="image/png",
-            ),
-        ],
-        language="zh",
-    )
-
-    augmented = pipeline._augment_tool_kwargs(
-        "geogebra_analysis",
-        {"image_base64": "HALLUCINATED"},
-        context,
-    )
-
-    assert augmented["image_base64"] == "data:image/png;base64,REAL_IMG_BYTES"
-    assert augmented["language"] == "zh"
 
 
 def test_build_llm_tool_schemas_kb_name_enum_matches_attached() -> None:

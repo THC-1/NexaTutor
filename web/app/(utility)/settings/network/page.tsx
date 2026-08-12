@@ -23,8 +23,6 @@ import { apiFetch, apiUrl } from "@/lib/api";
 type NetworkSettings = {
   backend_port: number;
   frontend_port: number;
-  public_api_base: string;
-  cors_origins: string[];
 };
 
 type NetworkSettingsPayload = {
@@ -32,34 +30,14 @@ type NetworkSettingsPayload = {
   effective: {
     backend_url: string;
     frontend_url: string;
-    browser_api_base: string;
-    api_base_source: string;
-    cors_mode: "explicit" | "permissive";
-    cors_origins: string[];
-    allow_remote_http_origins: boolean;
-  };
-  auth: {
-    enabled: boolean;
-    cookie_secure: boolean;
-    cookie_samesite: string;
-    cross_site_cookie_ready: boolean;
   };
   restart_required: boolean;
 };
-
-function splitOrigins(value: string): string[] {
-  return value
-    .split(/[,;\n]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
 
 function normalizeDraft(payload: NetworkSettingsPayload): NetworkSettings {
   return {
     backend_port: payload.settings.backend_port,
     frontend_port: payload.settings.frontend_port,
-    public_api_base: payload.settings.public_api_base || "",
-    cors_origins: payload.settings.cors_origins || [],
   };
 }
 
@@ -171,7 +149,7 @@ function ChatResponseTimeoutSection() {
     <SettingSection
       title={t("Chat response timeout")}
       description={t(
-        "How long chat waits for a reply before showing a timeout error. Increase it for slow tools like image or video generation.",
+        "How long chat waits for a reply before showing a timeout error. Increase it for slow tools like image generation.",
       )}
     >
       <SettingRow
@@ -206,11 +184,8 @@ function ChatResponseTimeoutSection() {
 export default function NetworkSettingsPage() {
   const { t } = useTranslation();
   const { registerExtension } = useSettings();
-  const apiBasePlaceholder = "https://api.example.com";
-  const corsPlaceholder = "https://learn.example.com\nhttp://10.0.0.5:3782";
   const [payload, setPayload] = useState<NetworkSettingsPayload | null>(null);
   const [draft, setDraft] = useState<NetworkSettings | null>(null);
-  const [corsText, setCorsText] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -235,7 +210,6 @@ export default function NetworkSettingsPage() {
         const next = data as NetworkSettingsPayload;
         setPayload(next);
         setDraft(normalizeDraft(next));
-        setCorsText((next.settings.cors_origins || []).join("\n"));
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
@@ -255,19 +229,14 @@ export default function NetworkSettingsPage() {
     const current = normalizeDraft(payload);
     return (
       current.backend_port !== draft.backend_port ||
-      current.frontend_port !== draft.frontend_port ||
-      current.public_api_base !== draft.public_api_base ||
-      JSON.stringify(current.cors_origins) !==
-        JSON.stringify(splitOrigins(corsText))
+      current.frontend_port !== draft.frontend_port
     );
-  }, [corsText, draft, payload]);
+  }, [draft, payload]);
 
   // Flush through the global Apply (top toolbar) instead of a local button.
   // Refs keep the registered ``save`` closure reading the latest draft.
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  const corsRef = useRef(corsText);
-  corsRef.current = corsText;
   const save = useCallback(async () => {
     const current = draftRef.current;
     if (!current) return;
@@ -278,7 +247,6 @@ export default function NetworkSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...current,
-          cors_origins: splitOrigins(corsRef.current),
         }),
       });
       const data = (await response.json().catch(() => ({}))) as
@@ -294,7 +262,6 @@ export default function NetworkSettingsPage() {
       const next = data as NetworkSettingsPayload;
       setPayload(next);
       setDraft(normalizeDraft(next));
-      setCorsText((next.settings.cors_origins || []).join("\n"));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -310,7 +277,7 @@ export default function NetworkSettingsPage() {
       <SettingsPageHeader
         title={t("Network")}
         description={t(
-          "Control the browser-facing API URL and CORS origins used by Docker, LAN, and reverse-proxy deployments.",
+          "Manage the local ports used by the NexaTutor backend and Web UI.",
         )}
       />
 
@@ -335,38 +302,16 @@ export default function NetworkSettingsPage() {
 
       {!loading && payload && draft && (
         <>
-          <div className="mb-7 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mb-7 grid grid-cols-1 gap-3 md:grid-cols-2">
             <DetailTile
-              label={t("Browser API")}
-              value={payload.effective.browser_api_base}
+              label={t("Backend")}
+              value={payload.effective.backend_url}
               tone="ok"
             />
             <DetailTile
-              label={t("CORS mode")}
-              value={
-                payload.effective.cors_mode === "permissive"
-                  ? t("Permissive until auth is enabled")
-                  : t("Explicit origins required")
-              }
-              tone={
-                payload.effective.cors_mode === "permissive" ? "ok" : "warn"
-              }
-            />
-            <DetailTile
-              label={t("Auth cookie")}
-              value={`${payload.auth.cookie_samesite}${
-                payload.auth.cookie_secure ? " + Secure" : ""
-              }`}
-              tone={
-                !payload.auth.enabled || payload.auth.cross_site_cookie_ready
-                  ? "ok"
-                  : "warn"
-              }
-            />
-            <DetailTile
-              label={t("Restart")}
-              value={t("Required after save")}
-              tone="warn"
+              label={t("Web UI")}
+              value={payload.effective.frontend_url}
+              tone="ok"
             />
           </div>
 
@@ -424,62 +369,6 @@ export default function NetworkSettingsPage() {
             />
           </SettingSection>
 
-          <SettingSection
-            title={t("Browser API base")}
-            description={t(
-              "Set this when the browser cannot reach the backend through localhost, such as remote Docker or a reverse proxy.",
-            )}
-          >
-            <SettingRow
-              title={t("Public API base")}
-              description={t(
-                "Leave blank for local Docker. Use the externally reachable backend URL, including any proxy path.",
-              )}
-              control={
-                <input
-                  className={`${inputClass} w-[360px] max-w-[48vw]`}
-                  placeholder={apiBasePlaceholder}
-                  value={draft.public_api_base}
-                  onChange={(event) =>
-                    setDraft((current) =>
-                      current
-                        ? { ...current, public_api_base: event.target.value }
-                        : current,
-                    )
-                  }
-                />
-              }
-            />
-          </SettingSection>
-
-          <SettingSection
-            title={t("CORS origins")}
-            description={t(
-              "Only required for authenticated cross-origin deployments. Use frontend origins, not API URLs.",
-            )}
-          >
-            <div className="py-4">
-              <textarea
-                className={`${inputClass} min-h-28 resize-y font-mono text-[12.5px] leading-relaxed`}
-                placeholder={corsPlaceholder}
-                value={corsText}
-                onChange={(event) => setCorsText(event.target.value)}
-              />
-              <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--muted-foreground)]">
-                {t(
-                  "Comma, semicolon, and newline separators are accepted. Bare host:port values are stored as http://host:port.",
-                )}
-              </p>
-            </div>
-          </SettingSection>
-
-          {payload.auth.enabled && !payload.auth.cookie_secure && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[12.5px] leading-relaxed text-amber-700 dark:text-amber-300">
-              {t(
-                "Auth is enabled but secure cookies are off. Cross-site HTTPS deployments should set auth.cookie_secure=true and restart so SameSite=None cookies work in modern browsers.",
-              )}
-            </div>
-          )}
         </>
       )}
     </div>

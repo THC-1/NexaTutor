@@ -1,9 +1,8 @@
-"""Tests for the image/video generation service layer.
+"""Tests for the image generation service layer.
 
 Covers the shared HTTP helpers, the OpenAI-compatible imagegen adapter (both
-``b64_json`` and ``url`` response shapes), the async-task videogen adapter
-(submit → poll → download, plus failure + payload shaping), catalog-driven
-config resolution, and the public facades.
+``b64_json`` and ``url`` response shapes), catalog-driven config resolution,
+and the public facade.
 """
 
 from __future__ import annotations
@@ -14,10 +13,7 @@ from typing import Any
 import httpx
 import pytest
 
-from deeptutor.services.config.provider_runtime import (
-    resolve_imagegen_runtime_config,
-    resolve_videogen_runtime_config,
-)
+from deeptutor.services.config.provider_runtime import resolve_imagegen_runtime_config
 from deeptutor.services.generation_http import (
     GenerationProviderError,
     build_auth_headers,
@@ -27,9 +23,6 @@ from deeptutor.services.imagegen import generate_image
 from deeptutor.services.imagegen.adapters.chat_completions import ChatCompletionsImagegenAdapter
 from deeptutor.services.imagegen.adapters.openai_compat import OpenAICompatImagegenAdapter
 from deeptutor.services.imagegen.config import ImagegenConfig
-from deeptutor.services.videogen import generate_video, probe_video
-from deeptutor.services.videogen.adapters.async_task import AsyncTaskVideogenAdapter
-from deeptutor.services.videogen.config import VideogenConfig
 
 
 def _patch_http(
@@ -147,57 +140,6 @@ async def test_imagegen_adapter_raises_on_http_error(monkeypatch: pytest.MonkeyP
         await OpenAICompatImagegenAdapter().generate("x", config)
 
 
-# ── videogen adapter ────────────────────────────────────────────────────────
-
-
-def test_videogen_submit_payload_seedance_shape() -> None:
-    config = VideogenConfig(
-        model="seedance",
-        base_url="https://ark/api/v3",
-        aspect_ratio="16:9",
-        resolution="720p",
-        duration="5",
-    )
-    payload = AsyncTaskVideogenAdapter._build_submit_payload("a wave", config)
-    assert payload["model"] == "seedance"
-    text = payload["content"][0]["text"]
-    assert text.startswith("a wave")
-    assert "--ratio 16:9" in text and "--resolution 720p" in text and "--duration 5" in text
-
-
-@pytest.mark.asyncio
-async def test_videogen_adapter_submit_poll_download(monkeypatch: pytest.MonkeyPatch) -> None:
-    submit = httpx.Response(200, json={"id": "task-1"})
-
-    def get_router(url: str, _kwargs: Any) -> httpx.Response:
-        if url.endswith("/contents/generations/tasks/task-1"):
-            return httpx.Response(
-                200, json={"status": "succeeded", "content": {"video_url": "https://cdn/v.mp4"}}
-            )
-        return httpx.Response(200, content=b"MP4DATA", headers={"content-type": "video/mp4"})
-
-    _patch_http(monkeypatch, post=submit, get=get_router)
-    config = VideogenConfig(
-        model="seedance",
-        base_url="https://ark/api/v3",
-        api_key="k",
-        poll_interval=0.0,
-    )
-    video, content_type = await AsyncTaskVideogenAdapter().generate("a wave", config)
-    assert video == b"MP4DATA"
-    assert content_type == "video/mp4"
-
-
-@pytest.mark.asyncio
-async def test_videogen_adapter_raises_on_failed_task(monkeypatch: pytest.MonkeyPatch) -> None:
-    submit = httpx.Response(200, json={"id": "t2"})
-    fail = httpx.Response(200, json={"status": "failed", "error": {"message": "content blocked"}})
-    _patch_http(monkeypatch, post=submit, get=fail)
-    config = VideogenConfig(model="m", base_url="https://x/v3", api_key="k", poll_interval=0.0)
-    with pytest.raises(GenerationProviderError, match="content blocked"):
-        await AsyncTaskVideogenAdapter().generate("x", config)
-
-
 # ── catalog resolution ──────────────────────────────────────────────────────
 
 
@@ -215,21 +157,6 @@ def _media_catalog() -> dict[str, Any]:
                         "base_url": "",
                         "api_key": "ark-key",
                         "models": [{"id": "m1", "model": "doubao-seedream-3", "size": "1024x1024"}],
-                    }
-                ],
-            },
-            "videogen": {
-                "active_profile_id": "p2",
-                "active_model_id": "m2",
-                "profiles": [
-                    {
-                        "id": "p2",
-                        "binding": "volcengine",
-                        "base_url": "",
-                        "api_key": "ark-key",
-                        "models": [
-                            {"id": "m2", "model": "doubao-seedance-1", "aspect_ratio": "9:16"}
-                        ],
                     }
                 ],
             },
@@ -269,13 +196,6 @@ def test_resolve_imagegen_openrouter_uses_chat_adapter() -> None:
     assert cfg.provider_name == "openrouter"
     assert cfg.adapter == "chat_completions"
     assert cfg.base_url == "https://openrouter.ai/api/v1"
-
-
-def test_resolve_videogen_config_uses_async_task_adapter() -> None:
-    cfg = resolve_videogen_runtime_config(catalog=_media_catalog())
-    assert cfg.provider_name == "volcengine"
-    assert cfg.adapter == "async_task"
-    assert cfg.aspect_ratio == "9:16"
 
 
 def test_resolve_imagegen_config_raises_without_model() -> None:
@@ -361,78 +281,6 @@ async def test_imagegen_tool_without_injected_workspace_uses_public_fallback(
 
 
 @pytest.mark.asyncio
-async def test_videogen_tool_forwards_progress_and_saves(monkeypatch: pytest.MonkeyPatch) -> None:
-    """videogen must forward progress to its event_sink (resets the chat idle
-    watchdog during long renders) and save the video to a public path."""
-    import shutil
-
-    from deeptutor.services.path_service import get_path_service
-    import deeptutor.services.videogen as videogen_mod
-    from deeptutor.tools.media_gen_tool import VideogenTool
-
-    async def fake_generate_video(
-        prompt: str, *, progress: Any = None, **_kwargs: Any
-    ) -> tuple[bytes, str]:
-        if progress is not None:
-            await progress("Still rendering video…")
-        return (b"MP4DATA", "video/mp4")
-
-    monkeypatch.setattr(videogen_mod, "generate_video", fake_generate_video)
-
-    events: list[tuple[str, str]] = []
-
-    async def event_sink(event_type: str, message: str = "", metadata: Any = None) -> None:
-        events.append((event_type, message))
-
-    workspace = get_path_service().get_task_workspace("chat", "test_videogen_tool") / "media"
-    workspace.mkdir(parents=True, exist_ok=True)
-    try:
-        result = await VideogenTool().execute(
-            prompt="an ocean wave",
-            _workspace_dir=str(workspace),
-            event_sink=event_sink,
-        )
-        assert result.success, result.content
-        assert any("rendering" in message for _, message in events), events
-        artifacts = result.metadata.get("artifacts") or []
-        assert artifacts, "tool produced no artifacts"
-        assert artifacts[0]["url"].startswith("/api/outputs/")
-        assert artifacts[0]["mime_type"] == "video/mp4"
-    finally:
-        shutil.rmtree(
-            get_path_service().get_task_workspace("chat", "test_videogen_tool"),
-            ignore_errors=True,
-        )
-
-
-@pytest.mark.asyncio
 async def test_generate_image_facade_rejects_empty_prompt() -> None:
     with pytest.raises(GenerationProviderError, match="empty prompt"):
         await generate_image("   ", catalog=_media_catalog())
-
-
-@pytest.mark.asyncio
-async def test_probe_video_returns_task_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured = _patch_http(monkeypatch, post=httpx.Response(200, json={"id": "probe-1"}))
-    task_id = await probe_video("test clip", catalog=_media_catalog())
-    assert task_id == "probe-1"
-    # Probe submits only — no polling GET.
-    assert captured["gets"] == []
-
-
-@pytest.mark.asyncio
-async def test_generate_video_facade(monkeypatch: pytest.MonkeyPatch) -> None:
-    submit = httpx.Response(200, json={"id": "task-9"})
-
-    def get_router(url: str, _kwargs: Any) -> httpx.Response:
-        if "tasks/task-9" in url:
-            return httpx.Response(
-                200, json={"status": "succeeded", "content": {"video_url": "https://cdn/v.mp4"}}
-            )
-        return httpx.Response(200, content=b"VID", headers={"content-type": "video/mp4"})
-
-    _patch_http(monkeypatch, post=submit, get=get_router)
-    # Default poll_interval would sleep, but the first poll succeeds so no sleep.
-    video, content_type = await generate_video("ocean", catalog=_media_catalog())
-    assert video == b"VID"
-    assert content_type == "video/mp4"

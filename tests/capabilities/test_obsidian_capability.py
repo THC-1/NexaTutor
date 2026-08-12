@@ -90,7 +90,7 @@ def test_vault_refuses_path_traversal(tmp_path: Path) -> None:
 def _bind(monkeypatch, vault_path: str, name: str = "myvault") -> None:
     """Make ``resolve_kb_metadata`` report ``name`` as an Obsidian vault."""
     monkeypatch.setattr(
-        "deeptutor.multi_user.knowledge_access.resolve_kb_metadata",
+        "deeptutor.services.local_workspace.resolve_kb_metadata",
         lambda ref: (
             {"name": ref, "type": "obsidian", "vault_path": vault_path}
             if ref == name
@@ -131,7 +131,7 @@ def test_binding_resolved_once_and_cached(monkeypatch, tmp_path: Path) -> None:
         calls["n"] += 1
         return {"name": ref, "type": "obsidian", "vault_path": str(tmp_path)}
 
-    monkeypatch.setattr("deeptutor.multi_user.knowledge_access.resolve_kb_metadata", fake)
+    monkeypatch.setattr("deeptutor.services.local_workspace.resolve_kb_metadata", fake)
     ctx = UnifiedContext(user_message="hi", knowledge_bases=["v"])
     obsidian_binding.vault_for_turn(ctx)
     obsidian_binding.vault_for_turn(ctx)
@@ -185,7 +185,7 @@ def test_exclusive_compose_drops_builtins_but_keeps_coexisting_rag() -> None:
         registry=get_tool_registry(),
         requested_tools=["web_search", "reason"],
         optional_whitelist=["web_search", "reason"],
-        mount_flags=ToolMountFlags(has_kb=True, has_code=True, has_memory=True),
+        mount_flags=ToolMountFlags(has_kb=True, has_memory=True),
         capability_owned=["obsidian_search", "obsidian_read"],
         exclusive=True,
     )
@@ -234,6 +234,6 @@ def test_obsidian_vault_refs_enumerates_every_selected_vault(monkeypatch, tmp_pa
             return {"name": ref, "type": "obsidian", "vault_path": str(tmp_path)}
         return {"name": ref, "type": None}
 
-    monkeypatch.setattr("deeptutor.multi_user.knowledge_access.resolve_kb_metadata", fake)
+    monkeypatch.setattr("deeptutor.services.local_workspace.resolve_kb_metadata", fake)
     ctx = UnifiedContext(user_message="hi", knowledge_bases=["vaultA", "kb1", "vaultB"])
     assert obsidian_binding.obsidian_vault_refs(ctx) == {"vaultA", "vaultB"}

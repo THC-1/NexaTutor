@@ -29,7 +29,7 @@ from deeptutor.services.subagent.types import ConsultResult, SubagentEvent
 def _bind(monkeypatch, *, kind: str = "claude_code", cwd: str = "", name: str = "myagent") -> None:
     """Make ``resolve_kb_metadata`` report ``name`` as a connected subagent."""
     monkeypatch.setattr(
-        "deeptutor.multi_user.knowledge_access.resolve_kb_metadata",
+        "deeptutor.services.local_workspace.resolve_kb_metadata",
         lambda ref: (
             {"name": ref, "type": "subagent", "agent_kind": kind, "cwd": cwd}
             if ref == name
@@ -47,6 +47,15 @@ def test_inactive_without_subagent_kb(monkeypatch) -> None:
     ctx = UnifiedContext(user_message="hi", knowledge_bases=["plain-kb"])
     assert cap.is_active(ctx) is False
     assert cap.system_block(ctx, language="en", prompts={}) is None
+
+
+def test_legacy_partner_metadata_cannot_activate_subagent_capability(monkeypatch) -> None:
+    _bind(monkeypatch, kind="partner")
+    cap = SubagentCapability()
+    ctx = UnifiedContext(user_message="hi", knowledge_bases=["myagent"])
+
+    assert cap.is_active(ctx) is False
+    assert cap.owned_kbs(ctx) == set()
 
 
 def test_active_injects_spec_and_min_rounds(monkeypatch) -> None:
@@ -103,7 +112,7 @@ def test_binding_cached(monkeypatch) -> None:
         calls["n"] += 1
         return {"name": ref, "type": "subagent", "agent_kind": "claude_code", "cwd": ""}
 
-    monkeypatch.setattr("deeptutor.multi_user.knowledge_access.resolve_kb_metadata", fake)
+    monkeypatch.setattr("deeptutor.services.local_workspace.resolve_kb_metadata", fake)
     ctx = UnifiedContext(user_message="hi", knowledge_bases=["a"])
     subagent_binding.connection_for_turn(ctx)
     subagent_binding.connection_for_turn(ctx)
@@ -121,7 +130,7 @@ def test_exclusive_compose_drops_builtins_but_keeps_coexisting_rag() -> None:
         registry=get_tool_registry(),
         requested_tools=["web_search", "rag"],
         optional_whitelist=["web_search", "rag"],
-        mount_flags=ToolMountFlags(has_kb=True, has_code=True, has_memory=True),
+        mount_flags=ToolMountFlags(has_kb=True, has_memory=True),
         capability_owned=["consult_subagent"],
         exclusive=True,
     )
@@ -169,7 +178,7 @@ class _FakeBackend:
         self.last_images: list[str] | None = None
 
     async def consult(
-        self, question, *, on_event, cwd, session_id, config, images=None, partner_id=None
+        self, question, *, on_event, cwd, session_id, config, images=None
     ):
         self.calls.append((question, session_id))
         self.last_images = images

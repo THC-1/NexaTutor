@@ -11,16 +11,9 @@ _THINKING_STYLE_MAP = {
 }
 _PROVIDER_THINKING_STYLES = {
     "deepseek": "thinking_type",
-    "volcengine": "thinking_type",
-    "volcengine_coding_plan": "thinking_type",
-    "byteplus": "thinking_type",
-    "byteplus_coding_plan": "thinking_type",
-    "dashscope": "enable_thinking",
-    "minimax": "reasoning_split",
 }
 _PROVIDER_REASONING_PATTERNS = {
     "deepseek": ("deepseek-v4-pro", "deepseek-reasoner"),
-    "dashscope": ("qwen3", "qwen-3", "qwq", "qwen-plus"),
 }
 # Models that ship with thinking enabled by default and burn the entire
 # `max_tokens` budget on reasoning unless we explicitly turn it off via the

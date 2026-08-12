@@ -21,7 +21,7 @@ from urllib import parse as urlparse
 from urllib import request as urlrequest
 
 from deeptutor.runtime.banner import labels_for, print_banner, resolve_language
-from deeptutor.runtime.home import DEEPTUTOR_HOME_ENV, PACKAGE_ROOT, get_runtime_home
+from deeptutor.runtime.home import NEXATUTOR_HOME_ENV, PACKAGE_ROOT, get_runtime_home
 
 BACKEND_READY_TIMEOUT = 60
 FRONTEND_READY_TIMEOUT = 120
@@ -37,6 +37,15 @@ SOURCE_BUILD_EXCLUDED_DIRS = {
     "test-results",
     "coverage",
 }
+LEGACY_AUTH_ENV_KEYS = (
+    "AUTH_ENABLED",
+    "NEXT_PUBLIC_AUTH_ENABLED",
+    "DEEPTUTOR_AUTH_ENABLED",
+    "AUTH_USERNAME",
+    "AUTH_PASSWORD_HASH",
+    "AUTH_TOKEN_EXPIRE_HOURS",
+    "AUTH_COOKIE_SECURE",
+)
 
 
 def _apply_single_user_allocator_env(env: dict[str, str]) -> None:
@@ -44,6 +53,13 @@ def _apply_single_user_allocator_env(env: dict[str, str]) -> None:
 
     env.setdefault("MALLOC_ARENA_MAX", "2")
     env.setdefault("MALLOC_TRIM_THRESHOLD_", "131072")
+
+
+def _drop_legacy_auth_env(env: dict[str, str]) -> None:
+    """Prevent removed account-auth settings from reaching child processes."""
+
+    for key in LEGACY_AUTH_ENV_KEYS:
+        env.pop(key, None)
 
 
 # Mutable holder so module-level helpers can format messages in the active
@@ -496,7 +512,6 @@ def _copy_packaged_web_if_needed(
     *,
     home: Path,
     api_base: str,
-    auth_enabled: bool,
 ) -> Path:
     """Copy packaged Next.js standalone files into a writable runtime cache.
 
@@ -513,7 +528,6 @@ def _copy_packaged_web_if_needed(
         "source": str(packaged),
         "source_mtime_ns": source_server.stat().st_mtime_ns,
         "api_base": api_base,
-        "auth_enabled": bool(auth_enabled),
     }
     if (cache / "server.js").exists():
         try:
@@ -528,7 +542,6 @@ def _copy_packaged_web_if_needed(
     _patch_packaged_web_placeholders(
         cache,
         api_base=api_base,
-        auth_enabled="true" if auth_enabled else "false",
     )
     marker.write_text(json.dumps(marker_payload, indent=2), encoding="utf-8")
     return cache
@@ -538,11 +551,9 @@ def _patch_packaged_web_placeholders(
     web_dir: Path,
     *,
     api_base: str,
-    auth_enabled: str,
 ) -> None:
     replacements = {
         "__NEXT_PUBLIC_API_BASE_PLACEHOLDER__": api_base,
-        "__NEXT_PUBLIC_AUTH_ENABLED_PLACEHOLDER__": auth_enabled,
     }
     roots = [web_dir / ".next", web_dir / "server.js"]
     for root in roots:
@@ -591,13 +602,13 @@ def _ensure_web_dependencies(source: Path, npm: str) -> None:
         )
 
 
-def _source_production_env(*, api_base: str, auth_enabled: bool) -> dict[str, str]:
+def _source_production_env(*, api_base: str) -> dict[str, str]:
     """Environment shared by the source production build and server."""
 
     env = os.environ.copy()
-    env["DEEPTUTOR_NEXT_DIST_DIR"] = SOURCE_PRODUCTION_DIST_DIR
+    _drop_legacy_auth_env(env)
+    env["NEXATUTOR_NEXT_DIST_DIR"] = SOURCE_PRODUCTION_DIST_DIR
     env["NEXT_PUBLIC_API_BASE"] = api_base
-    env["NEXT_PUBLIC_AUTH_ENABLED"] = "true" if auth_enabled else "false"
     return env
 
 
@@ -606,9 +617,8 @@ def _source_build_fingerprint(source: Path, env: dict[str, str]) -> str:
 
     digest = hashlib.sha256()
     for key in (
-        "DEEPTUTOR_NEXT_DIST_DIR",
+        "NEXATUTOR_NEXT_DIST_DIR",
         "NEXT_PUBLIC_API_BASE",
-        "NEXT_PUBLIC_AUTH_ENABLED",
     ):
         digest.update(key.encode("utf-8"))
         digest.update(b"\0")
@@ -648,7 +658,6 @@ def _ensure_source_production_build(
     npm: str,
     *,
     api_base: str,
-    auth_enabled: bool,
 ) -> None:
     """Build source installs once, then reuse them until an input changes.
 
@@ -659,7 +668,7 @@ def _ensure_source_production_build(
     the other's output.
     """
 
-    env = _source_production_env(api_base=api_base, auth_enabled=auth_enabled)
+    env = _source_production_env(api_base=api_base)
     dist = source / SOURCE_PRODUCTION_DIST_DIR
     marker = dist / SOURCE_BUILD_MARKER
     payload = {"fingerprint": _source_build_fingerprint(source, env)}
@@ -724,7 +733,6 @@ def _resolve_frontend(
     frontend_port: int,
     *,
     api_base: str,
-    auth_enabled: bool,
     dev: bool = False,
 ) -> FrontendRuntime:
     packaged = _packaged_web_dir()
@@ -736,7 +744,6 @@ def _resolve_frontend(
             packaged,
             home=home,
             api_base=api_base,
-            auth_enabled=auth_enabled,
         )
         return FrontendRuntime("packaged", [node, str(runtime_web / "server.js")], runtime_web)
 
@@ -755,7 +762,6 @@ def _resolve_frontend(
                 source,
                 npm,
                 api_base=api_base,
-                auth_enabled=auth_enabled,
             )
             standalone = source / SOURCE_PRODUCTION_DIST_DIR / "standalone"
             return FrontendRuntime(
@@ -930,7 +936,7 @@ def start(home: str | Path | None = None, *, dev: bool = False) -> None:
     _relax_console_encoding()
     runtime_home = get_runtime_home(home)
     runtime_home.mkdir(parents=True, exist_ok=True)
-    os.environ[DEEPTUTOR_HOME_ENV] = str(runtime_home)
+    os.environ[NEXATUTOR_HOME_ENV] = str(runtime_home)
     _reset_runtime_singletons()
 
     from deeptutor.services.config import (
@@ -938,7 +944,6 @@ def start(home: str | Path | None = None, *, dev: bool = False) -> None:
         ensure_runtime_settings_files,
         export_runtime_settings_to_env,
         get_ws_max_size,
-        load_auth_settings,
         load_launch_settings,
     )
     from deeptutor.services.setup import init_user_directories
@@ -947,7 +952,6 @@ def start(home: str | Path | None = None, *, dev: bool = False) -> None:
     ensure_runtime_settings_files()
     settings = load_launch_settings(runtime_home)
     runtime_env = export_runtime_settings_to_env(overwrite=True)
-    auth_enabled = bool(load_auth_settings()["enabled"])
 
     global _ACTIVE_LABELS
     language = resolve_language()
@@ -956,16 +960,11 @@ def start(home: str | Path | None = None, *, dev: bool = False) -> None:
     backend_port = settings.backend_port
     frontend_port = settings.frontend_port
     backend_url = f"http://127.0.0.1:{backend_port}"
-    api_base = (
-        runtime_env.get("NEXT_PUBLIC_API_BASE_EXTERNAL")
-        or runtime_env.get("NEXT_PUBLIC_API_BASE")
-        or backend_url
-    )
+    api_base = runtime_env.get("NEXT_PUBLIC_API_BASE") or backend_url
     frontend = _resolve_frontend(
         runtime_home,
         frontend_port,
         api_base=api_base,
-        auth_enabled=auth_enabled,
         dev=dev,
     )
     existing_frontend = _detect_existing_source_frontend(frontend)
@@ -992,16 +991,11 @@ def start(home: str | Path | None = None, *, dev: bool = False) -> None:
         backend_port, frontend_port = resolved_backend, resolved_frontend
         runtime_env = export_runtime_settings_to_env(overwrite=True)
         backend_url = f"http://127.0.0.1:{backend_port}"
-        api_base = (
-            runtime_env.get("NEXT_PUBLIC_API_BASE_EXTERNAL")
-            or runtime_env.get("NEXT_PUBLIC_API_BASE")
-            or backend_url
-        )
+        api_base = runtime_env.get("NEXT_PUBLIC_API_BASE") or backend_url
         frontend = _resolve_frontend(
             runtime_home,
             frontend_port,
             api_base=api_base,
-            auth_enabled=auth_enabled,
             dev=dev,
         )
 
@@ -1021,26 +1015,25 @@ def start(home: str | Path | None = None, *, dev: bool = False) -> None:
     _log(_t("start.press_ctrl_c"))
 
     common_env = os.environ.copy()
+    _drop_legacy_auth_env(common_env)
     common_env.update(runtime_env)
-    common_env[DEEPTUTOR_HOME_ENV] = str(runtime_home)
+    common_env[NEXATUTOR_HOME_ENV] = str(runtime_home)
     common_env["BACKEND_PORT"] = str(backend_port)
     common_env["FRONTEND_PORT"] = str(frontend_port)
     common_env["PORT"] = str(frontend_port)
-    common_env["HOSTNAME"] = "0.0.0.0"
+    common_env["HOSTNAME"] = "127.0.0.1"
     common_env["NEXT_PUBLIC_API_BASE"] = api_base
-    common_env["NEXT_PUBLIC_AUTH_ENABLED"] = "true" if auth_enabled else "false"
     # The Next.js middleware (web/proxy.ts) runs in the frontend's Node runtime
-    # and reads these at request time to forward /api/* and /ws/* to the backend
-    # and to gate the login redirect. The browser uses relative paths, so the
+    # and reads these at request time to forward /api/* and /ws/* to the backend.
+    # The browser uses relative paths, so the
     # frontend server reaches the backend on the IPv4 loopback at the resolved port —
     # use backend_url (not api_base, which may be an external browser URL).
-    common_env["DEEPTUTOR_API_BASE_URL"] = backend_url
-    common_env["DEEPTUTOR_AUTH_ENABLED"] = "true" if auth_enabled else "false"
+    common_env["NEXATUTOR_API_BASE_URL"] = backend_url
     common_env["PYTHONUNBUFFERED"] = "1"
     common_env["PYTHONIOENCODING"] = "utf-8:replace"
     _apply_single_user_allocator_env(common_env)
     if frontend.kind == "source-production":
-        common_env["DEEPTUTOR_NEXT_DIST_DIR"] = SOURCE_PRODUCTION_DIST_DIR
+        common_env["NEXATUTOR_NEXT_DIST_DIR"] = SOURCE_PRODUCTION_DIST_DIR
 
     backend_cmd = [
         sys.executable,
@@ -1048,7 +1041,7 @@ def start(home: str | Path | None = None, *, dev: bool = False) -> None:
         "uvicorn",
         "deeptutor.api.main:app",
         "--host",
-        "0.0.0.0",
+        "127.0.0.1",
         "--port",
         str(backend_port),
         "--log-level",

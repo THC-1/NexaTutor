@@ -49,7 +49,6 @@ const SERVICE_LABEL: Record<ServiceName, string> = {
   tts: "Text-to-Speech",
   stt: "Speech-to-Text",
   imagegen: "Image Generation",
-  videogen: "Video Generation",
 };
 
 export function ServiceConfigEditor({ service }: { service: ServiceName }) {
@@ -193,9 +192,8 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
   };
 
   if (!catalogEditable) {
-    // catalogEditable=false covers two unrelated cases: settings fetch failed,
-    // or multi-user grant denied. Split them so a Docker user without the
-    // 8001 port mapped does not see an "assigned by administrator" hint.
+    // A failed settings request gets the more actionable connection message.
+    // A successful response without a catalog is treated as unavailable.
     if (settingsError) {
       return (
         <div className="rounded-xl border border-dashed border-[var(--border)] px-5 py-10 text-center text-[13px] text-[var(--muted-foreground)]">
@@ -208,15 +206,9 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
     return (
       <div className="space-y-4">
         <div className="rounded-xl border border-dashed border-[var(--border)] px-5 py-10 text-center text-[13px] text-[var(--muted-foreground)]">
-          {t(
-            "Model endpoints are assigned by your administrator. You can still personalize theme and language here.",
-          )}
+          {t("Model catalog is unavailable. Codex sign-in remains available below.")}
         </div>
-        {/* One thing an ordinary user CAN configure for themselves: an
-            owner-bound Codex login. It authenticates their own ChatGPT plan,
-            so it is never something an administrator can grant them — the
-            account has to sign in for itself (#781). The card talks only to
-            the per-user OAuth endpoints and exposes no catalog. */}
+        {/* Codex sign-in remains independent from loading the model catalog. */}
         {service === "llm" && <CodexOAuthCard />}
       </div>
     );
@@ -727,64 +719,6 @@ export function ServiceConfigEditor({ service }: { service: ServiceName }) {
                         </div>
                       </>
                     )}
-                    {service === "videogen" && (
-                      <>
-                        <div>
-                          <div className="mb-1.5 text-[12px] text-[var(--muted-foreground)]">
-                            {t("Aspect ratio")}
-                          </div>
-                          <input
-                            className={inputClass}
-                            value={activeModel.aspect_ratio || ""}
-                            onChange={(e) =>
-                              updateModelField(
-                                service,
-                                "aspect_ratio",
-                                e.target.value,
-                              )
-                            }
-                            placeholder="16:9"
-                          />
-                          <p className="mt-1.5 text-[11px] text-[var(--muted-foreground)]">
-                            {t(
-                              "Defaults sent with each request. Leave empty for the provider default.",
-                            )}
-                          </p>
-                        </div>
-                        <div>
-                          <div className="mb-1.5 text-[12px] text-[var(--muted-foreground)]">
-                            {t("Duration / Resolution")}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <input
-                              className={inputClass}
-                              inputMode="numeric"
-                              value={activeModel.duration || ""}
-                              onChange={(e) =>
-                                updateModelField(
-                                  service,
-                                  "duration",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder={t("seconds")}
-                            />
-                            <input
-                              className={inputClass}
-                              value={activeModel.resolution || ""}
-                              onChange={(e) =>
-                                updateModelField(
-                                  service,
-                                  "resolution",
-                                  e.target.value,
-                                )
-                              }
-                              placeholder="720p"
-                            />
-                          </div>
-                        </div>
-                      </>
-                    )}
                   </div>
                 )}
               </div>
@@ -1092,8 +1026,7 @@ function ProfileFields({
               if (
                 (service === "tts" ||
                   service === "stt" ||
-                  service === "imagegen" ||
-                  service === "videogen") &&
+                  service === "imagegen") &&
                 match?.default_model
               ) {
                 updateModelField(service, "model", match.default_model);
@@ -1194,10 +1127,11 @@ function ProfileFields({
               spellCheck={false}
               className={`${inputClass} pr-10 font-mono`}
               value={profile.api_key}
-              onChange={(e) =>
-                updateProfileField(service, "api_key", e.target.value)
-              }
-              placeholder="sk-..."
+              onChange={(e) => {
+                updateProfileField(service, "api_key", e.target.value);
+                updateProfileField(service, "api_key_clear", false);
+              }}
+              placeholder={profile.api_key_set ? t("API key configured") : "sk-..."}
             />
             <button
               type="button"
@@ -1213,6 +1147,18 @@ function ProfileFields({
               )}
             </button>
           </div>
+          {profile.api_key_set && !profile.api_key && (
+            <button
+              type="button"
+              className="mt-1.5 text-[11px] text-red-600 hover:underline dark:text-red-400"
+              onClick={() => {
+                updateProfileField(service, "api_key_clear", true);
+                updateProfileField(service, "api_key_set", false);
+              }}
+            >
+              {t("Clear saved API key")}
+            </button>
+          )}
         </div>
       )}
       {!isCodexOAuth && (

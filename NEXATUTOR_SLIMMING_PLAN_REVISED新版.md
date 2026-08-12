@@ -12,6 +12,20 @@
 
 ---
 
+## 0. 当前执行状态（2026-08-12）
+
+- P0 仓库级安全与发布收口已完成：`serve` 默认绑定 `127.0.0.1`，Auth off 不再接受任意 CORS Origin，原 PyPI / Docker Release workflows 已暂停，`web/.next-deeptutor` 已停止跟踪并忽略。
+- Partners 已按“取消注册 → 取消调用 → 删除 UI → 删除后端实现 → 删除依赖”完整裁剪；Router、CLI、Tools、Partner Subagent backend、调用点、UI、实现、依赖和正向测试均已移除。
+- P2 决策变更：**My Agents / Subagents 保留**。后续只移除 Partner、MCP、CLI Apps、在线 Hub、Auth / Multi-user 等对它们的外部注入和多用户耦合，保护 `/agents`、`/settings/agents`、`/api/v1/subagents`、`consult_subagent` 与本地 Agent backend。
+- P3 已完成：MCP、CLI Apps 扩展系统、Deferred Tools / `load_tools`、在线 Skill Hub、Plugin Management Router / UI / CLI 和专用依赖均已删除；旧 grant 中的 `mcp_tools` / `cli_apps` 字段会被忽略，不能重新激活功能。
+- P4 已完成：账号 Auth / Admin / Multi-user / Grants 的注册、调用、UI、实现与专属依赖均已删除，运行边界已收敛为 `LocalUserContext → LocalWorkspace → data/user`；OpenAI Codex OAuth 与 My Agents / Subagents 继续保留。
+- P5 已完成：PocketBase / 外部集成 Sidecar 与公网部署能力已按五步裁剪；Session 固定使用本地 SQLite，公网配置收敛为 loopback，Next 同源代理、Sandbox Runner、Codex OAuth 与 My Agents / Subagents 继续保留。
+- P6 已完成：Book / Living Book、Videogen、Math Animator / Manim、GeoGebra、Cron、Built-in GitHub / Brainstorm / Reason / Exec 已按单功能五步删除；受限 Code Execution 已完成 Python-only、显式启用、SYSTEM isolation、argv-only 安全收敛。
+- P7 已完成：RAG Registry 只保留 `llamaindex`，知识库产品路径收敛为 Parse → Chunk → Embedding → FAISS + BM25 Hybrid → Citation；非标准引擎均按五步删除。下一步为 P8 Provider 收缩。
+- P8 已完成：LLM 产品入口收敛为六类，Runtime Registry 为六类加独立 `openai_codex`；29 个非目标 Spec、GitHub Copilot / Azure 专用实现、Copilot CLI 与专属依赖已删除。Provider Key 改为普通响应不可读的 write-only 三态更新。下一步为 P9 Memory UI 精简。
+
+---
+
 ## 1. 项目定位
 
 NexaTutor 是面向个人用户的本地 AI 学习工作台。
@@ -33,7 +47,7 @@ NexaTutor 不再定位为：
 
 - 多用户平台
 - IM 机器人平台
-- 外部 Agent 调度平台
+- 面向多用户或远程编排的 Agent 调度平台
 - 插件市场
 - 通用自动化平台
 - 多 Provider 聚合平台
@@ -120,7 +134,7 @@ git tag nexatutor-baseline
 - 缓存与临时文件
 - 与本次改造无关的已有修改
 
-当前仓库的 `web/.next-deeptutor/` 存在大量被 Git 跟踪的构建产物。创建 baseline 前必须先决定是恢复、停止跟踪还是单独处理，不能把一次本地构建产生的数千项变化混入基线提交。
+基线建立时，`web/.next-deeptutor/` 曾存在大量被 Git 跟踪的构建产物。当前已经作为独立仓库卫生变更停止跟踪，并由 `.gitignore` 保持忽略；后续仍不能把本地生成物混入源码提交。
 
 先记录：
 
@@ -398,7 +412,7 @@ write_note
 | `cron` | Remove | 完整删除 |
 | `geogebra_analysis` | Remove | 完整删除 |
 | `videogen` | Remove | 完整删除 |
-| Subagent 工具 | Remove | 随 My Agents 删除 |
+| `consult_subagent` / Subagent 工具 | Core | 保留 My Agents；仅允许用户显式配置的本地 Agent |
 | Partner 工具 | Remove | 随 Partners 删除 |
 
 Quiz / Grading 当前主要由 Question Pipeline、API 与 Quiz Judge WebSocket 实现，不应误当成普通 Built-in Tool 删除或迁移。
@@ -426,7 +440,7 @@ Core 中的目标分为两类：
 - 收敛后的 Python-only Code Execution 安全策略
 - DeepTutor 旧数据一次性迁移器
 
-Core Build 不得混入 Remove 功能的五步删除提交。当前 `/imports/chat-history` 主要服务外部聊天历史导入，应随 Agent Import 删除，不能视为通用数据导入能力。
+Core Build 不得混入 Remove 功能的五步删除提交。当前 `/imports/chat-history` 主要服务外部聊天历史导入，是否继续作为 My Agents 的会话导入能力保留，需要在批次 2 单独核对；不能直接视为通用数据导入能力。
 
 ---
 
@@ -519,7 +533,7 @@ role = owner
   → 删除平台化实现
 ```
 
-### Partner 与外部 Agent
+### Partners / IM
 
 删除：
 
@@ -537,17 +551,25 @@ role = owner
 - Matrix
 - Teams
 - 其他 IM Channel
-- My Agents
-- Claude Code
-- Codex
-- Gemini CLI
-- Kimi
-- OpenCode
-- MiMo
-- 外部 CLI Agent 调用
-- 外部 Agent 历史会话导入
-- consult_subagent
 - Partner 专用工具
+
+### My Agents / Subagents：保留并收敛边界
+
+保留：
+
+- My Agents
+- Subagents
+- `consult_subagent`
+- 用户显式配置的本地 Claude Code、Codex、Gemini CLI、Kimi、OpenCode、MiMo 等 Agent Provider
+- 与 My Agents 直接相关的本地会话查看与导入能力（批次 2 逐项核对）
+
+边界：
+
+- 不作为多用户、远程托管或在线市场能力
+- 不允许旧 Partner、MCP、CLI Apps 或在线 Hub 配置隐式新增 Agent Provider
+- 不自动启动用户未启用的 Agent 进程
+- Partner 专用 Subagent Backend 与 `/api/v1/subagents/partners` 旁路仍随 Partners 删除；不得误删通用 Subagent 能力
+- Agent 依赖只有在确认不再被保留 Provider 使用后才可删除
 
 ### 扩展生态
 
@@ -630,9 +652,10 @@ NexaTutor CLI 属于 Core；这里删除的是“允许模型安装和调用第�
 - llama.cpp
 - Lemonade
 - OVMS
-- OpenAI Codex OAuth
 - GitHub Copilot OAuth
 - Coding Plan Provider
+
+OpenAI Codex OAuth 是 Core 保留的独立 Provider 登录能力，不在非目标模型入口删除范围内。
 
 其他兼容 API 如确有需要，统一通过：
 
@@ -717,26 +740,23 @@ Anthropic-compatible
 
 ---
 
-### 批次 2：My Agents / Subagents
+### 批次 2：My Agents / Subagents 保留与边界固化
 
-删除：
+本批次不再执行 Remove，而是保护并收敛现有本地 Agent 能力：
 
-- My Agents
-- Claude Code
-- Codex
-- Gemini CLI
-- Kimi
-- OpenCode
-- MiMo
-- consult_subagent
-- 外部 Agent 会话导入
+- 保留 My Agents、Subagents 与 `consult_subagent`
+- 逐个核对本地 Agent Provider 的注册、进程生命周期、工作目录和权限边界
+- 将 Partner 专用 Subagent Backend、MCP / CLI Apps 注入点与通用 Subagent 能力拆开
+- 核对 Agent 会话查看与导入是否只服务本地 My Agents
+- 记录保留 Provider 的必要依赖，避免后续依赖清洗误删
 
 完成标志：
 
-- Chat 无 subagent 工具
-- 无 Agent 进程启动
-- 无 Agent 会话导入入口
-- Agent 相关依赖进入待清理清单
+- Chat 可按用户显式配置调用 Subagent
+- 未启用的 Agent 不自动启动
+- Partner、MCP、CLI Apps 与在线 Hub 的旧配置不能隐式激活或注入 Agent
+- Agent 工作目录、进程生命周期和错误处理有定向测试
+- 保留的 Agent Provider 及其依赖有明确清单
 
 ---
 
@@ -798,17 +818,56 @@ LocalUserContext
 批次 4 拆分为：
 
 ```text
-4A LocalUserContext 与 Local Identity
-4B LocalWorkspacePaths
-4C LocalKnowledgeAccess
-4D LocalModelAccess
-4E LocalToolPolicy / LocalSkillAccess
-4F Core 调用点迁移验证
-4G Auth / Admin 取消注册与调用
-4H Auth UI 删除
-4I Multi-User / Grants / Audit 后端删除
-4J Auth 与 Multi-User 依赖删除
+4A LocalUserContext 与 Local Identity                         ✅
+4B LocalWorkspacePaths                                       ✅
+4C LocalKnowledgeAccess                                      ✅
+4D LocalModelAccess                                          ✅
+4E LocalToolPolicy / LocalSkillAccess                        ✅
+4F Core 调用点迁移验证                                       ✅
+4G Auth / Admin 取消注册与调用                               ✅
+4H Auth UI 删除                                              ✅
+4I Multi-User / Grants / Audit 后端删除                      ✅
+4J Auth 与 Multi-User 依赖删除                               ✅
 ```
+
+#### 4I / 4J 施工计划（2026-08-12）
+
+继续按可回滚边界执行，不把后端实现、旧配置兼容和依赖删除混成一次修改：
+
+```text
+4I-1 生产引用清零
+     - 证明除待删 Auth 实现外，Core 不再 import deeptutor.multi_user
+     - 移除 launcher / runtime settings / network status 中的 Auth 激活调用
+     - 旧 auth.json、环境变量和 Docker 参数不能重新启用登录态
+
+4I-2 Auth 实现删除
+     - 删除未注册的 account Auth Router 与 Auth service
+     - 删除 JWT、Cookie、密码、Profile、Avatar、用户管理实现
+     - 独立保护 OpenAI Codex OAuth callback / service
+
+4I-3 Multi-User 平台实现删除
+     - 删除 context / identity / paths / grants / audit / router
+     - 删除 knowledge/model/tool/skill/personal access 旧 Adapter
+     - 保证 LocalUserContext → LocalWorkspace → data/user 是唯一运行路径
+
+4I-4 测试与兼容面清理
+     - 删除只验证账号隔离、Grant、Admin、JWT、Cookie 的测试
+     - 将仍保护 Core 的测试改写为 LocalWorkspace 语义
+     - 增加旧配置、动态 import、HTTP/WS 路由不能复活功能的负断言
+
+4J-1 依赖归属证明
+     - 检查运行时、测试、CLI、Docker、动态 import、optional extra
+     - 区分账号 Auth 专属依赖与 Codex OAuth / Core 共享依赖
+
+4J-2 删除专属依赖并锁文件验收
+     - 删除 JWT / password hash / account Auth 专属包与配置
+     - 不删除 Codex OAuth、My Agents 或其他 Core 仍需依赖
+     - 干净 import、FastAPI startup、CLI、Python 与前端构建通过
+```
+
+完成证据（2026-08-12）：账号 Auth / Multi-user 实现与专属依赖已清零；旧配置无法激活；P4 后端集成 256 passed / 1 skipped；前端 Node 271 passed、i18n / lint / production build 通过。下一步进入批次 5，只先做 PocketBase 与外部集成 Sidecar 的 Core 依赖盘点。
+
+并行施工约束：Agent 可并行做只读盘点或互不重叠的文件域；共享注册点、依赖文件、计划与交接文档只由主 Agent 修改，避免覆盖工作区已有变更。
 
 完成标志：
 
@@ -840,6 +899,55 @@ LocalUserContext
 
 此批次不得删除 Sandbox Runner Sidecar、Sandbox Service、资源限制、Artifact 收集或 Code Execution 仍在使用的隔离基础设施。
 
+#### 5A 只读依赖盘点（2026-08-12）
+
+PocketBase 当前不是 Core 的必需存储，但仍可被旧配置激活，不能跳过取消注册与取消调用直接删除实现：
+
+| Core 域 | 当前实际依赖 | 本地替代 / 结论 |
+| --- | --- | --- |
+| Chat / Session | 盘点时 `get_session_store()` 会在 `integrations.pocketbase_url` 非空时选择 `PocketBaseSessionStore`；Turn Runtime、Session API、Dashboard 与 App Facade 使用该选择结果 | SQLite Session Store 是默认零配置路径；5B-1 已取消 PocketBase backend 选择 |
+| Knowledge | `KnowledgeManager` 会镜像 KB metadata，上传 Router 会镜像附件；均为 best-effort PocketBase 调用 | 本地 `kb_config.json`、文件和索引明确是 source of truth；取消镜像调用不改变 Core 主路径 |
+| Notebook | 无 PocketBase import 或调用 | `data/user/workspace/notebook/*.json` 本地持久化 |
+| Question Bank | 无 PocketBase import；Router 显式使用 `get_sqlite_session_store()` | 本地 `chat_history.db` 持久化 |
+| Memory | 无 PocketBase import；Memory 文档、trace、snapshot 均走 LocalWorkspace 文件，Chat / Quiz snapshot 显式读取本地 SQLite | 不依赖 PocketBase；带有 `sidecar` 名称的 `*.meta.json` 是本地伴随文件，不是外部服务 |
+| Mastery Path | 学习进度由 `LearningStore` 保存为本地 JSON；取消 active turn 时会经 Turn Runtime 间接使用当前 Session Store | 先固定 Session Store 为 SQLite，即可解除这条传递依赖 |
+
+注册、调用、UI、实现、依赖与共享基础设施盘点：
+
+- 注册 / 激活：Session Store 条件选择、FastAPI lifespan health ping、Docker / Podman Compose `pocketbase` service 与 `depends_on`、runtime settings / env 导出。
+- 调用：Knowledge metadata / attachment 镜像、PocketBase session CRUD / turn event persistence、Compose wrapper 端口渲染和初始化脚本。
+- UI：没有 PocketBase 专属页面或前端 API client；`integrations.json` 当前仅由后端、脚本和 Compose wrapper 使用。
+- 实现：`services/pocketbase_client.py`、`services/session/pocketbase_store.py`、`scripts/pb_setup.py` 及 PocketBase 专属测试。
+- 依赖：`pocketbase>=0.12.0` 同时出现在主依赖、`server` extra 与 `requirements/server.txt`，只能在实现和动态 import 清零后删除。
+- Sidecar 分类：当前 Compose 中唯一非沙箱外部 Sidecar 是 PocketBase。Research Note Agent、Memory / RAG `*.meta.json` 等只是内部代理或本地伴随文件；`sandbox-runner` 是 Code Execution 安全基础设施，明确保留。
+- 公网部署边界：可删除的是 `next_public_api_base_external`、用户自定义远程 CORS Origin、远程 Docker / 反向代理 UI 与配置；本地端口、固定 loopback CORS、Next.js 到 FastAPI 的同源代理继续保留。
+- Codex OAuth 边界：保留 callback Router、OAuth service、前端 callback rewrite 与临时本地 callback overlay；不得把它们当作公网部署或外部 Sidecar 删除。
+
+#### 5B 小步施工顺序
+
+严格按一个负断言对应一个微步骤推进：
+
+```text
+5B-1 取消 PocketBase Session Store 条件注册；旧 integrations 配置也只能得到 SQLite  ✅
+5B-2 取消 FastAPI PocketBase startup health hook  ✅
+5B-3 取消 Compose PocketBase service / depends_on 注册和 wrapper 端口注入  ✅
+5C-1 取消 Knowledge metadata 镜像调用  ✅
+5C-2 取消 Knowledge attachment 镜像调用  ✅
+5C-3 取消 runtime settings / env 对 PocketBase 的读取、导出和旧配置激活  ✅
+5D    UI 负断言（PocketBase 当前无专属 UI）  ✅
+5E-1 删除 PocketBase client、Session Store、setup script 和专属测试  ✅
+5E-2 删除 PocketBase Python 依赖并执行依赖验证  ✅
+5F-1 单独取消公网 API base 与自定义远程 CORS 配置注册 / 调用  ✅
+5F-2 将 Network UI 收敛为本地端口、localhost 状态与现有 Chat timeout  ✅
+5F-3 删除公网部署专属后端兼容、Compose / 文档配置与专属依赖  ✅
+```
+
+PocketBase 完成五步前不开始公网部署域；任何步骤均不得修改或删除 `Dockerfile.runner`、`deeptutor/services/sandbox/**`、`sandbox-runner` service、Codex OAuth 或 My Agents / Subagents。
+
+5B-1 验证证据（2026-08-12）：负断言在修改前准确选中 `PocketBaseSessionStore` 并失败；修改后该断言通过，相关 Turn Runtime / WebSocket / Notebook 组合回归 71 passed，FastAPI import 与 SQLite store smoke 通过。完整 Session 目录另有 1 个可独立复现的既有 SQLite 旧路径迁移失败，不属于本步骤修改范围。
+
+P5 完成证据（2026-08-12）：PocketBase 五步门禁 12 passed，公网部署 / 配置 / launcher / Compose 与 Codex callback 定向回归 107 passed，Codex OAuth / Subagents 保护回归 127 passed；扩大 Python 定向回归 681 passed，仅有同一既有 SQLite 迁移失败。排除无法在 Windows 收集的 Linux runner 文件后，全量 Python 为 2612 passed / 13 skipped / 12 failed；失败均是既有 Windows 编码、路径分隔、POSIX `sleep` / `resource` 与 SQLite 旧路径迁移差异。前端 Node 271/271、i18n parity、lint 0 error（34 条既有 warning）及 production build 均通过；`pip check` 无破损依赖。Sandbox 实现未修改。
+
 ---
 
 ### 批次 6：Book / 多媒体 / 高权限工具
@@ -866,15 +974,15 @@ LocalUserContext
 批次 6 必须按单功能拆分：
 
 ```text
-6A Book / Living Book
-6B Video / videogen
-6C Math Animator / Manim
-6D GeoGebra
-6E Cron
-6F GitHub Tool
-6G Brainstorm Tool
-6H Reason Tool
-6I 通用 Exec
+6A Book / Living Book  ✅
+6B Video / videogen  ✅
+6C Math Animator / Manim  ✅
+6D GeoGebra  ✅
+6E Cron  ✅
+6F GitHub Tool  ✅
+6G Brainstorm Tool  ✅
+6H Reason Tool  ✅
+6I 通用 Exec  ✅
 ```
 
 每个子批次分别执行“取消注册 → 取消调用 → 删除 UI → 删除后端 → 删除依赖”，不能把 Book、多媒体和工具集中删除。
@@ -894,11 +1002,15 @@ LocalUserContext
 - Windows 本地运行时明确使用哪一种隔离后端
 - 没有可靠隔离后端时保持不可用，而不是静默降级
 
-在该批次验收前，不宣称 Code Execution 已达到文档第 8 节的目标安全边界。
+6J 已完成：默认关闭并由用户显式启用，仅支持 Python；工具使用 argv 调用且不接受任意 Shell 命令；只有健康且声明 `argv-v1` 的 SYSTEM runner 才能激活，旧 runner 与 Windows 裸机 subprocess 均失败关闭。runner 仅挂载单用户 workspace，位于 internal network 且无宿主端口；资源限制、Quota 与 Artifact 收集继续保留。
+
+P6 完成证据（2026-08-12）：各域负断言均在修改前准确失败，完成后 P6 总门禁 39 passed；Registry / Router / CLI / Core / Codex OAuth / My Agents / Subagents 整合回归 555 passed / 2 skipped。前端 i18n parity、Node 265/265、lint 0 error（27 条既有 warning）和 production build 均通过；`pip check` 无破损依赖。排除 Windows 无法收集的 Linux runner 文件后，全量 Python 为 2581 passed / 10 skipped / 9 failed，失败均是已知 Windows 路径分隔、POSIX `sleep` / `resource` 或既有 SQLite 迁移差异。`data/` 无 Git 状态变更。
 
 ---
 
 ### 批次 7：知识库引擎收缩
+
+> 状态：✅ 已完成（2026-08-12）
 
 保留唯一标准路径：
 
@@ -951,11 +1063,15 @@ Choose RAG Engine
 - 可以显示页码 / 引用
 - 删除文件与重建索引正常
 
+P7 完成证据（2026-08-12）：删除与标准路径门禁 26 passed；Knowledge / RAG / Chat / Question / Capabilities / Memory 扩大回归 481 passed / 1 skipped。标准写路径测试实际产出 FAISS index 与 BM25 sidecar，检索使用 reciprocal-rank fusion；普通 PDF 的页码 metadata 已贯通到 chunk source 与 Chat citation UI。前端 i18n parity、Node 266/266、lint 0 error（27 条既有 warning）及 production build 均通过；`pip check` 无破损依赖。排除 Windows 无法收集的 Linux runner 文件后，全量 Python 为 2444 passed / 9 skipped / 8 failed，失败均为已知 Windows 路径分隔、POSIX `sleep` / `resource` 或既有 SQLite 迁移差异。旧设置、索引和远程 pointer 未自动删除或改写，`data/` 无 Git 状态变更。
+
 Visualize 不随 Manim 删除。保留 `visualize` Capability 及 Mermaid、SVG、Chart.js、HTML 路径，只移除 Manim 路由、Math Animator 调用与相关配置。
 
 ---
 
 ### 批次 8：Provider 收缩
+
+> 状态：✅ 已完成（2026-08-12）
 
 产品层只保留：
 
@@ -1005,9 +1121,22 @@ Provider 收缩分两阶段：
 
 不能把“UI 不显示”直接等价为“立即删除全部内部兼容元数据”。
 
+P8 实际完成边界：
+
+- 产品下拉与 CLI 初始化只展示 OpenAI、Anthropic、Gemini、DeepSeek、OpenAI-compatible、Anthropic-compatible；OpenAI Codex 作为独立 OAuth Core 保留。
+- LLM Runtime Spec 从 36 项减为 7 项；旧非目标 binding 不修改原始 `model_catalog.json`，运行时只归一到 `custom` 或 `custom_anthropic`，不能复活专用 Adapter。
+- 删除 GitHub Copilot、Azure OpenAI 的专用 LLM Provider、动态 import、Agentic 分支与 Copilot CLI；删除仅由 Copilot 使用的 `oauth-cli-kit`。
+- 共享 OpenAI-compatible / Anthropic-compatible、模型级 Qwen / DeepSeek 推理与视觉能力继续保留，避免兼容端点退化。
+- Embedding、Search、My Agents / Subagents 分别为独立 Registry；Aliyun Embedding、Perplexity Search 和六个本地 Agent backend 不属于本批删除范围。
+- Settings / Catalog 普通响应不再回显明文 API Key；前端通过 `api_key_set` 显示状态，空值保留、显式 clear、非空替换，Connection Test 在后端内存合并已存密钥。
+
+P8 完成证据（2026-08-12）：定向与 LLM 组合回归 246 passed；Chat / Knowledge / Notebook / Question / Memory / Mastery / Codex OAuth / Subagents 扩大回归 762 passed / 2 skipped。前端 i18n parity、Node 269/269、lint 0 error（26 条既有 warning）及 production build 均通过；`pip check` 无破损依赖。排除 Windows 无法收集的 Linux runner 文件后，全量 Python 为 2211 passed / 9 skipped / 8 failed，失败均为 P7 已知 Windows 路径分隔、POSIX `sleep` / `resource` 或 SQLite 迁移差异。未自动删除或改写用户历史设置、索引和数据。
+
 ---
 
 ### 批次 9：Memory UI 与设置精简
+
+完成证据（2026-08-12）：P9 保留 L1 / L2 / L3 技术层级展示，但将默认首页改为用户语义入口：用户偏好、学习目标/画像、当前知识水平、最近学习内容、主动保存的长期记忆。Memory Graph、手工 Consolidator Run、Budget / Audit / Chunking / Reference 参数不再出现在默认产品入口；旧 Graph 路由兼容重定向到 `/memory`。未修改 Memory Backend、Router、数据模型、Consolidation、历史 Markdown 或用户数据。新增前端契约测试，Memory 后端与 resolver 回归 124 passed。
 
 第一阶段：
 
@@ -1043,6 +1172,10 @@ refactor(memory)
 ---
 
 ### 批次 10：设置与导航收口
+
+完成证据（2026-08-12）：主导航收敛为对话、知识库、学习空间、写作（Optional）、设置；Memory 与 My Agents 迁入学习空间个性化入口，原 `/memory`、`/agents` 路由继续保留。Settings Hub 隐藏 Network、image、stt、tts 独立入口，保留其兼容页面/API/运行时；`/settings/status` 与 `/settings/mineru` 继续重定向，Settings Hub 保留状态条。Models 仅默认展示 LLM、Embedding、Search；Chat 与工具保留 Tools、Capabilities、Attachments 与本地 Agents 配置。MinerU 保留为可选文档解析实现，不能因默认隐藏而删除。P10 契约、Node 275 passed、i18n parity、lint 0 error、production build、TypeScript、pip check、API/Memory/Settings/Config 定向回归 219 passed 均通过。
+
+P11 边界：只在运行时、测试、CLI、动态 import、optional extra 与构建引用全部清零后清洗依赖；不得删除 Memory、MinerU、voice/image、Sandbox、My Agents/Subagents 或 Codex OAuth 的共享依赖。
 
 最终主导航：
 
@@ -1095,6 +1228,8 @@ NexaTutor
 
 ### 批次 11：依赖最终清洗
 
+完成证据（2026-08-12）：Feature → Dependency Matrix 已记录于 `NEXATUTOR_HANDOFF.md`。独立 CLI wheel 删除零引用 `nest_asyncio`，补齐保留的本地 Agent 模型同步依赖 `pyte`；requirements 同步。其余声明均有 Core、Optional 或共享调用证据，未为追求数量误删。P11 定向 73 passed；扩大 Python 2298 passed / 9 skipped / 8 个既有 Windows/POSIX/SQLite 差异；前端 275 passed、i18n、lint 0 error、build、pip check、compileall 通过。
+
 建立并维护：
 
 ```text
@@ -1109,10 +1244,10 @@ Partners
 ├── <channel SDK>
 └── <shared packages>
 
-My Agents
-├── <terminal / PTY packages>
-├── <OAuth packages>
-└── <agent integration packages>
+My Agents（保留）
+├── <terminal / PTY packages：按保留 Provider 保护>
+├── <OAuth packages：逐项判断本地 Agent 是否需要>
+└── <agent integration packages：记录为保留依赖>
 
 Auth
 ├── <JWT package>
@@ -1156,6 +1291,8 @@ CLI Apps
 ---
 
 ### 批次 12：项目改名
+
+第一层完成证据（2026-08-12）：分发名与正式 CLI 为 `nexatutor`；旧 `deeptutor` CLI 是带迁移提示的单实现转发。前端 metadata、OpenAPI、Docker/Compose、Logger、User-Agent、文档和暂停的发布目标均切换到 NexaTutor。环境变量采用 `NEXATUTOR_*` 优先、仍活跃 `DEEPTUTOR_*` 单向 fallback；已删除 Auth 变量不建立新别名。数据根 `data/user` 不迁移。第二层 `deeptutor` → `nexatutor` Python 顶级 namespace 继续延后。
 
 所有 Core 稳定后再进行：
 
@@ -1387,15 +1524,16 @@ nexatutor → 正式入口
 - 进程数量限制
 - 明确异常终止机制
 
-当前实现与目标之间存在明确差距：
+P6 完成后的实现边界：
 
-- 当前支持 Python、C、C++，目标第一版只保留 Python。
-- 当前通过 Sandbox Service 生成并执行命令，目标禁止模型直接提供任意 Shell 命令。
-- 当前没有可靠的 Python import 白名单。
-- 当前 Windows 本地环境可能使用受限 subprocess；这不是强隔离。
-- 当前 Sandbox Runner Sidecar 仍可能是 Code Execution 的必要隔离后端。
+- 第一版只支持 Python，C / C++ 已移除。
+- 模型只提交 Python 源码；执行请求由服务端构造为 argv，不接受任意 Shell 命令。
+- AST import 白名单与危险调用限制作为纵深防御，不作为强隔离替代品。
+- Windows 裸机 restricted subprocess 默认关闭且不会激活 Code Execution。
+- 只有健康且声明 `argv-v1` 的 SYSTEM Sandbox Runner 才能激活；旧 runner 失败关闭。
+- runner 仅挂载单用户 workspace，位于无默认公网路由的 internal Compose network，且不发布宿主端口。
 
-因此，`import` 白名单、禁止 `subprocess` 等限制不能只靠字符串扫描实现。若无法形成可靠的运行时约束，应采用“默认关闭 + 无可靠隔离后端时不可用”的保守策略。
+`import` 白名单、禁止 `subprocess` 等 AST 限制只是纵深防御；默认关闭与无可靠隔离后端时不可用仍是基础策略。
 
 Sandbox 基础设施处置：
 
@@ -1696,7 +1834,8 @@ Smoke 14  MCP cannot be re-enabled by legacy config
   → 重启
   → 恢复
   → CLI 核心命令验证
-  → 确认 MCP / Partners / Agents / CLI Apps 无注册与入口
+  → 确认 MCP / Partners / CLI Apps 无注册与入口
+  → 确认 My Agents / Subagents 的本地保留流程可用
 ```
 
 只有这条链完整通过，才算真正完成裁剪。
@@ -1779,7 +1918,7 @@ Rejected
 
 不要因为“功能看起来很酷”就重新引入：
 
-- Agents
+- 面向多用户或远程托管的 Agent 平台
 - MCP
 - IM
 - 大量 Provider
@@ -1831,6 +1970,11 @@ NexaTutor
 ├── Memory
 │   └── Simplified User-facing UI
 │
+├── Agents
+│   ├── My Agents
+│   ├── Subagents
+│   └── Local Agent Providers
+│
 ├── User
 │   ├── LocalUserContext
 │   ├── LocalWorkspacePaths
@@ -1856,7 +2000,7 @@ NexaTutor
 └── Web
 ```
 
-最终架构不包含 MCP Runtime、CLI Apps 扩展运行时、Partners、Subagents、插件市场或多用户权限系统。
+最终架构不包含 MCP Runtime、CLI Apps 扩展运行时、Partners、插件市场或多用户权限系统；保留单用户、本地范围内的 My Agents / Subagents。
 
 ---
 
@@ -1901,7 +2045,7 @@ NexaTutor
   ↓
 Partners / IM（逐 Channel / Runtime 小步删除）
   ↓
-My Agents / Subagents（逐 Provider 小步删除）
+My Agents / Subagents（保留并逐 Provider 固化本地边界）
   ↓
 MCP 全运行时（按注册、调用、UI、Backend、依赖分步）
   ↓

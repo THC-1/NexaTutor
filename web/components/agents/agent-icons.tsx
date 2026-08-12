@@ -174,23 +174,6 @@ export function MimoGlyph({ size = 16, ...props }: GlyphProps) {
   );
 }
 
-// A connected partner: a filled heart in the Partners accent, so a consulted
-// partner reads as a companion (not a CLI) everywhere a connected agent appears.
-export function PartnerGlyph({ size = 16, ...props }: GlyphProps) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="#7C6FF0"
-      aria-hidden
-      {...props}
-    >
-      <path d="M12 21s-7.5-4.35-10-9.16C.61 9.06 1.6 5.6 4.6 4.66c1.9-.6 3.86.18 5 1.74L12 9l.4-.6c.14-.96 1.1-1.74 2-2.34 1.74-1.16 4.1-.78 5.4.9 1.6 2.06 1 5.34-1.4 7.88C19.5 16.65 12 21 12 21z" />
-    </svg>
-  );
-}
-
 export type AgentGlyph = ComponentType<GlyphProps>;
 
 export function agentGlyph(kind: string | undefined): AgentGlyph | null {
@@ -200,6 +183,5 @@ export function agentGlyph(kind: string | undefined): AgentGlyph | null {
   if (kind === "kimi") return KimiGlyph;
   if (kind === "opencode") return OpencodeGlyph;
   if (kind === "mimo") return MimoGlyph;
-  if (kind === "partner") return PartnerGlyph;
   return null;
 }

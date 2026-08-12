@@ -29,7 +29,7 @@ import {
  */
 
 type NetworkPreview = {
-  apiBase: string;
+  backendUrl: string;
 };
 
 export default function SettingsHub() {
@@ -65,8 +65,8 @@ export default function SettingsHub() {
     };
   }, [catalog, catalogEditable, diagnosticsResults]);
 
-  // Network preview: a guarded peek at the effective browser API base. Fails
-  // quietly (non-admins get 403) → the block falls back to its blurb.
+  // Network preview: a guarded peek at the effective local backend URL. A
+  // connection failure leaves the block on its descriptive fallback.
   const [network, setNetwork] = useState<NetworkPreview | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -75,10 +75,10 @@ export default function SettingsHub() {
         const res = await apiFetch(apiUrl("/api/v1/settings/network"));
         if (!res.ok) return;
         const data = (await res.json()) as {
-          effective?: { browser_api_base?: string };
+          effective?: { backend_url?: string };
         };
         if (cancelled) return;
-        setNetwork({ apiBase: data.effective?.browser_api_base || "" });
+        setNetwork({ backendUrl: data.effective?.backend_url || "" });
       } catch {
         /* leave null → block shows its blurb */
       }
@@ -261,9 +261,9 @@ function NetworkPreviewRow({
       </span>
       <span
         className="truncate font-mono text-[11.5px] text-[var(--foreground)]"
-        title={network.apiBase}
+        title={network.backendUrl}
       >
-        {network.apiBase || tr({ zh: "本地", en: "local" })}
+        {network.backendUrl || tr({ zh: "本地", en: "local" })}
       </span>
     </div>
   );

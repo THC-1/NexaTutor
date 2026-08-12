@@ -222,7 +222,7 @@ async def test_run_seeds_coexisting_kb_but_not_owned_vault(
             return {"name": ref, "type": "obsidian", "vault_path": "/tmp/vault"}
         return {"name": ref, "type": None}
 
-    monkeypatch.setattr("deeptutor.multi_user.knowledge_access.resolve_kb_metadata", _fake_meta)
+    monkeypatch.setattr("deeptutor.services.local_workspace.resolve_kb_metadata", _fake_meta)
     registry = _SeedRegistry()
     client = _ScriptedChatClient([[_llm_chunk(content="Done.")]])
     pipeline = _make_pipeline(monkeypatch, registry, client)

@@ -34,8 +34,8 @@ from deeptutor.tools.builtin import (
 # context conditions), not by the user's composer toggles. Membership here
 # hides the tool from ``{tool_list}`` until its corresponding condition fires
 # in :func:`compose_enabled_tools`. Derived from
-# ``CONFIGURABLE_BUILTIN_TOOL_NAMES`` so the partner config surface and the
-# auto-mount set can never drift apart.
+# ``CONFIGURABLE_BUILTIN_TOOL_NAMES`` so configuration and the auto-mount set
+# can never drift apart.
 AUTO_MOUNTED_TOOLS: frozenset[str] = frozenset(CONFIGURABLE_BUILTIN_TOOL_NAMES)
 
 # Conditional auto-mounts: tool name -> the ``ToolMountFlags`` attribute that
@@ -51,9 +51,6 @@ _CONDITIONAL_MOUNT_FLAGS: dict[str, str] = {
     "list_notebook": "has_notebooks",
     "write_note": "has_notebooks",
     "read_skill": "has_skills",
-    "load_tools": "has_deferred_tools",
-    "exec": "has_exec",
-    "code_execution": "has_code",
 }
 
 # Built-ins that survive an exclusive knowledge capability when other KBs are
@@ -93,8 +90,6 @@ class ToolMountFlags:
     has_notebooks: bool = False
     has_skills: bool = False
     has_deferred_tools: bool = False
-    has_exec: bool = False
-    has_code: bool = False
 
 
 def compose_enabled_tools(
@@ -120,8 +115,7 @@ def compose_enabled_tools(
        KB is attached, ``read_source`` if a source index exists, …).
     3. Active loop capabilities' *owned* tools (``capability_owned``) — the
        capability's own tools, added on top.
-    4. Always-on auto-mounts (``write_memory`` / ``web_fetch`` / ``github`` /
-       ``ask_user`` / ``cron``).
+    4. Always-on auto-mounts (``write_memory`` / ``web_fetch`` / ``ask_user``).
 
     A loop capability (solve, mastery) reuses the *full* chat surface and only
     *adds* its owned tools — it never curates or suppresses the reused
@@ -140,18 +134,14 @@ def compose_enabled_tools(
     ``builtin_whitelist`` gates the *built-in* auto-mounts (steps 2 and 4 —
     the :data:`AUTO_MOUNTED_TOOLS` members). ``None`` (the product-chat default)
     means "no gating": every built-in mounts under its usual context condition,
-    exactly as before. A set restricts which built-ins may mount — partners use
-    this so an owner can deny e.g. ``read_memory`` to an IM-facing companion.
+    exactly as before. A set restricts which built-ins may mount.
     It never *adds* tools (a built-in still needs its context gate); it only
     subtracts. User-toggled tools (step 1) and capability-owned tools (step 3)
     are unaffected — they have their own gates.
 
-    ``forced`` tools are appended unconditionally — they bypass both the
-    ``builtin_whitelist`` and the context gates (used by the partner runtime to
-    mandate ``partner_read`` / ``partner_memorize`` / ``partner_search``).
-    ``suppressed`` tools are removed from the final list regardless of how they
-    got there (the partner runtime suppresses chat's ``read_memory`` /
-    ``write_memory`` in favour of the partner variants). Both apply in the
+    ``forced`` tools are appended unconditionally and bypass both the
+    ``builtin_whitelist`` and context gates. ``suppressed`` tools are removed
+    from the final list regardless of how they got there. Both apply in the
     ``exclusive`` branch too.
 
     The result is ordered and deduplicated. ``optional_whitelist`` is still
@@ -187,7 +177,7 @@ def compose_enabled_tools(
         if getattr(mount_flags, flag) and _builtin_allowed(tool_name):
             composed.append(tool_name)
     composed.extend(str(name) for name in capability_owned if str(name).strip())
-    for always_on in ("write_memory", "web_fetch", "github", "ask_user", "cron"):
+    for always_on in ("write_memory", "web_fetch", "ask_user"):
         if _builtin_allowed(always_on):
             composed.append(always_on)
     return _finalize(composed, forced, suppressed)

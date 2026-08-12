@@ -217,8 +217,8 @@ async def test_raising_tool_emits_terminal_error() -> None:
 async def test_one_failed_tool_does_not_raise_a_turn_level_error() -> None:
     """A failed tool call is recoverable; a stream ERROR is not.
 
-    A partner turn collects ERROR events and, when the turn produced no text,
-    re-runs the whole thing on its backup model — re-executing side-effecting
+    An outer retry policy may collect ERROR events and re-run the whole turn,
+    re-executing side-effecting
     tools (``exec``, file and notebook writes). Terminality therefore rides on
     ``call_state``, which is all the frontend reads, on a PROGRESS event.
     """

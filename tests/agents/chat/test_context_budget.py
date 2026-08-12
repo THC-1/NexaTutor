@@ -77,9 +77,8 @@ def test_every_source_of_context_lands_in_its_own_segment() -> None:
                 {"role": "system", "content": "SYSTEM PROMPT"},
                 {"role": "user", "content": "question"},
             ],
-            tool_schemas=[_schema("rag"), _schema("mcp_pageindex_get_page_content")],
+            tool_schemas=[_schema("rag"), _schema("read_source")],
         ),
-        loaded_deferred_names={"mcp_pageindex_get_page_content"},
     )
 
     tokens = _tokens(budget)
@@ -90,7 +89,6 @@ def test_every_source_of_context_lands_in_its_own_segment() -> None:
         "extended_tools",
         "capability",
         "system_tools",
-        "mcp_tools",
         "messages",
     }
     # general + runtime_policy + loop read as one preamble line.
@@ -266,23 +264,18 @@ def test_unparseable_window_falls_back_and_says_so() -> None:
     assert info.estimated is True
 
 
-def test_deferred_tools_split_from_builtins_and_unloaded_ones_are_a_scalar() -> None:
+def test_all_tool_schemas_are_counted_as_system_tools() -> None:
     budget = _budget(
         request=LLMRequestSnapshot(
-            tool_schemas=[_schema("rag"), _schema("mcp_x", "a longer description")],
+            tool_schemas=[_schema("rag"), _schema("read_source", "a longer description")],
         ),
-        loaded_deferred_names={"mcp_x"},
-        deferred_tool_count=12,
     )
 
     tokens = _tokens(budget)
-    assert tokens["system_tools"] == _chars(
+    assert tokens["system_tools"] > _chars(
         '{"type": "function", "function": {"name": "rag", "description": "d", "parameters": {}}}'
     )
-    assert tokens["mcp_tools"] > 0
-    assert budget["deferred_tool_count"] == 12
-    # Unloaded extended tools cost only their manifest line — never a segment.
-    assert "deferred" not in tokens
+    assert "mcp_tools" not in tokens
 
 
 # ---- degradation ---------------------------------------------------------

@@ -1,9 +1,11 @@
-name: Docker Release
+name: Docker Release (paused)
 
-# Triggered when a GitHub Release is published.
+# Paused while this workflow still targets the upstream DeepTutor image.
+# The manual entry remains visible for auditability, but the publish job is
+# hard-disabled until a dedicated NexaTutor release workflow replaces it.
 # Builds a multi-platform Docker image and pushes it to GitHub Container Registry (GHCR).
 #
-# Image: ghcr.io/hkuds/deeptutor
+# Image: ghcr.io/thc-1/nexatutor
 # Tags:
 #   - Version tag stripped of 'v' prefix (e.g. release v1.2.3 → image tag 1.2.3)
 #   - latest (always points to the most recently published release)
@@ -11,8 +13,7 @@ name: Docker Release
 # Platforms: linux/amd64, linux/arm64
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,6 +22,7 @@ permissions:
 jobs:
   build-and-push:
     name: Build and Push Multi-Platform Docker Image
+    if: ${{ false }}
     runs-on: ubuntu-latest
 
     steps:
@@ -49,7 +51,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/hkuds/deeptutor
+          images: ghcr.io/thc-1/nexatutor
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest

@@ -17,9 +17,9 @@ Work with PowerPoint `.pptx` files using **python-pptx** (preinstalled). A `.ppt
 is a ZIP of XML parts; python-pptx handles the structure so you rarely touch XML.
 Drop to raw OOXML only for the few things the library can't express (see Advanced).
 
-All work happens in the sandbox `exec` shell, in the current workspace dir where
+All work happens through restricted Python `code_execution`, in the current workspace where
 uploaded files land. Write a short Python heredoc or temp `.py` and run it.
-After `exec` completes, use the Generated artifacts URL from the tool result in
+After `code_execution` completes, use the Generated artifacts URL from the tool result in
 the final answer so the user can download the deck.
 
 ## Mental model

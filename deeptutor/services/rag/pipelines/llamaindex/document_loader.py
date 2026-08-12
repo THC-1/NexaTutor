@@ -3,7 +3,7 @@
 Parser-backed files (PDF / Office / e-book) are converted through the shared
 document-parse bridge (``deeptutor/services/parsing``), so the engine the user
 picked in Settings → Document Parsing (text-only, MinerU, Docling, markitdown,
-PyMuPDF4LLM) owns extraction. This is the same seam LightRAG and GraphRAG use;
+PyMuPDF4LLM) owns extraction. This is the same seam LightRAG uses;
 routing LlamaIndex through it too means the parse-engine choice is honored by
 every local retrieval engine, and image-capable engines' extracted images flow
 into the multimodal ``ImageNode`` path below.
@@ -16,6 +16,7 @@ from dataclasses import dataclass
 import logging
 import mimetypes
 from pathlib import Path
+import re
 from typing import Any, Iterable
 
 from llama_index.core import Document
@@ -68,7 +69,17 @@ class LlamaIndexDocumentLoader:
             file_path = Path(file_path_str)
             self.logger.info(f"Parsing document: {file_path.name}")
             text, extracted_images = self._parse_document(file_path)
-            self._append_if_nonempty(documents, file_path, text)
+            page_sections = self._split_pdf_page_sections(file_path, text)
+            if page_sections:
+                for page_number, page_text in page_sections:
+                    self._append_if_nonempty(
+                        documents,
+                        file_path,
+                        page_text,
+                        metadata={"page_label": str(page_number), "page": page_number},
+                    )
+            else:
+                self._append_if_nonempty(documents, file_path, text)
             image_sources.extend(extracted_images)
 
         for file_path_str in classification.text_files:
@@ -95,7 +106,7 @@ class LlamaIndexDocumentLoader:
         Returns ``(text, extracted_images)``. A parse failure (engine
         unavailable, unsupported format for the active engine, or models not
         ready) is logged and the file is skipped — matching the sibling
-        LightRAG/GraphRAG pipelines — rather than aborting the whole batch.
+        LightRAG pipeline — rather than aborting the whole batch.
         """
         from deeptutor.services.parsing import ParserError, get_parse_service
 
@@ -143,6 +154,31 @@ class LlamaIndexDocumentLoader:
                 f"Extracted {len(images)} image(s) from {origin.name} for multimodal indexing"
             )
         return images
+
+    @staticmethod
+    def _split_pdf_page_sections(file_path: Path, text: str) -> list[tuple[int, str]]:
+        """Split the built-in PDF parser's stable page markers.
+
+        The shared text-only parser emits ``--- Page N ---`` boundaries.  Keep
+        those boundaries as document metadata before LlamaIndex chunks the
+        text, so every descendant node can produce a page-aware citation.  A
+        richer parser that emits no such markers continues down the existing
+        single-document path without altering its markdown.
+        """
+        if file_path.suffix.lower() != ".pdf" or not text.strip():
+            return []
+        matches = list(re.finditer(r"(?m)^---\s*Page\s+(\d+)\s*---\s*$", text))
+        if not matches:
+            return []
+
+        sections: list[tuple[int, str]] = []
+        for index, match in enumerate(matches):
+            start = match.end()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+            page_text = text[start:end].strip()
+            if page_text:
+                sections.append((int(match.group(1)), page_text))
+        return sections
 
     async def _load_image_nodes(self, sources: list[_ImageSource]) -> list[ImageNode]:
         embedding_client = get_embedding_client()
@@ -262,15 +298,24 @@ class LlamaIndexDocumentLoader:
             "mimetype": mimetype,
         }
 
-    def _append_if_nonempty(self, documents: list[Any], file_path: Path, text: str) -> None:
+    def _append_if_nonempty(
+        self,
+        documents: list[Any],
+        file_path: Path,
+        text: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         if text.strip():
+            document_metadata = {
+                "file_name": file_path.name,
+                "file_path": str(file_path),
+            }
+            document_metadata.update(metadata or {})
             documents.append(
                 Document(
                     text=text,
-                    metadata={
-                        "file_name": file_path.name,
-                        "file_path": str(file_path),
-                    },
+                    metadata=document_metadata,
                 )
             )
             self.logger.info(f"Loaded: {file_path.name} ({len(text)} chars)")

@@ -30,7 +30,7 @@ export const DEFAULT_ATTACHMENT_LIMITS: AttachmentLimits = {
   maxTotalBytes: DEFAULT_MAX_TOTAL_ATTACHMENT_BYTES,
 };
 
-// Several composers (home chat, book panel, quiz follow-up, partners) mount
+// Several composers (home chat, book panel, quiz follow-up) mount
 // at once; share one fetch and keep the resolved value for the session.
 // Admin edits land on the next full page load, which is fine for a policy
 // that changes rarely.

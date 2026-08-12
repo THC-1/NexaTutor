@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  connectLightRagServer as connectLightRagServerApi,
   connectLinkedFolder as connectLinkedFolderApi,
   connectObsidianVault as connectObsidianApi,
   createKnowledgeBase as createKbApi,
@@ -10,14 +9,12 @@ import {
   getKnowledgeUploadPolicy,
   invalidateKnowledgeCaches,
   listKnowledgeBases,
-  listRagProviders,
   reindexKnowledgeBase as reindexKbApi,
   retryKnowledgeBase as retryKbApi,
   setDefaultKnowledgeBase as setDefaultKbApi,
   uploadKnowledgeBaseFiles as uploadKbApi,
   type KnowledgeTaskResponse,
   type KnowledgeUploadPolicy,
-  type RagProviderSummary,
 } from "@/lib/knowledge-api";
 import {
   DEFAULT_UPLOAD_POLICY,
@@ -28,14 +25,6 @@ import {
 import { useKnowledgeProgress } from "@/hooks/useKnowledgeProgress";
 import { useKnowledgeHistory } from "@/hooks/useKnowledgeHistory";
 
-const DEFAULT_PROVIDER_FALLBACK: RagProviderSummary[] = [
-  {
-    id: "llamaindex",
-    name: "LlamaIndex",
-    description: "Pure vector retrieval, fastest processing speed.",
-  },
-];
-
 interface LoadOptions {
   force?: boolean;
   showSpinner?: boolean;
@@ -43,7 +32,6 @@ interface LoadOptions {
 
 export function useKnowledgeBases() {
   const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
-  const [providers, setProviders] = useState<RagProviderSummary[]>([]);
   const [uploadPolicy, setUploadPolicy] = useState<KnowledgeUploadPolicy>(
     DEFAULT_UPLOAD_POLICY,
   );
@@ -83,9 +71,8 @@ export function useKnowledgeBases() {
       if (showSpinner) setLoading(true);
       setError(null);
       try {
-        const [kbList, providerList, policy] = await Promise.all([
+        const [kbList, policy] = await Promise.all([
           listKnowledgeBases({ force: opts?.force }),
-          listRagProviders({ force: opts?.force }),
           getKnowledgeUploadPolicy({ force: opts?.force }).catch(
             () => DEFAULT_UPLOAD_POLICY,
           ),
@@ -93,15 +80,6 @@ export function useKnowledgeBases() {
         const typedKbs = kbList as KnowledgeBase[];
         setKbs(typedKbs);
         setUploadPolicy(policy);
-        // Keep the array reference stable across the 4s indexing poll when
-        // nothing changed, so consumers keyed on `providers` don't re-fire.
-        setProviders((prev) => {
-          const next = providerList.length
-            ? providerList
-            : DEFAULT_PROVIDER_FALLBACK;
-          return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
-        });
-
         // Auto-resubscribe to progress for KBs that are still live
         // (e.g. user navigated away and came back mid-indexing).
         for (const kb of typedKbs) {
@@ -173,7 +151,6 @@ export function useKnowledgeBases() {
   const createKb = useCallback(
     async (params: {
       name: string;
-      provider: string;
       files: File[];
     }): Promise<KnowledgeTaskResponse> => {
       const result = await createKbApi(params);
@@ -210,9 +187,8 @@ export function useKnowledgeBases() {
     async (
       kbName: string,
       files: File[],
-      provider?: string,
     ): Promise<KnowledgeTaskResponse> => {
-      const result = await uploadKbApi(kbName, files, { provider });
+      const result = await uploadKbApi(kbName, files);
       invalidateKnowledgeCaches();
       const fileCount = files.length;
       if (result.task_id) {
@@ -326,24 +302,9 @@ export function useKnowledgeBases() {
     [load],
   );
 
-  const connectLightRagServer = useCallback(
-    async (params: {
-      name: string;
-      serverUrl: string;
-      apiKey?: string;
-      mode?: string;
-    }) => {
-      await connectLightRagServerApi(params);
-      invalidateKnowledgeCaches();
-      await load({ force: true, showSpinner: false });
-    },
-    [load],
-  );
-
   return {
     kbs: combinedKbs,
     rawKbs: kbs,
-    providers,
     uploadPolicy,
     loading,
     error,
@@ -362,7 +323,6 @@ export function useKnowledgeBases() {
     deleteKb,
     connectObsidian,
     connectLinkedFolder,
-    connectLightRagServer,
   };
 }
 

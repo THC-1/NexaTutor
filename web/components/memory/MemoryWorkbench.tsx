@@ -26,7 +26,6 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { apiFetch, apiUrl } from "@/lib/api";
-import MemoryRunPanel from "@/components/memory/MemoryRunPanel";
 
 const MarkdownRenderer = dynamic(
   () => import("@/components/common/MarkdownRenderer"),
@@ -71,8 +70,6 @@ const _L3_SURFACES = new Set([
   "notebook",
   "quiz",
   "kb",
-  "book",
-  "partner",
   "cowriter",
 ]);
 const _FOOTNOTE_DEF_LINKIFY_BARE_RE =
@@ -156,12 +153,11 @@ const L2_NAV: NavEntry[] = [
   { key: "notebook", icon: NotebookPen, label: "Notebook" },
   { key: "quiz", icon: ClipboardList, label: "Quiz" },
   { key: "kb", icon: BookOpen, label: "Knowledge base" },
-  { key: "book", icon: Library, label: "Book" },
-  { key: "partner", icon: Bot, label: "Partner" },
   { key: "cowriter", icon: PenLine, label: "Co-writer" },
 ];
 
 const L3_NAV: NavEntry[] = [
+  { key: "preferences", icon: Network, label: "User preferences" },
   { key: "recent", icon: Network, label: "Recent summary" },
   { key: "profile", icon: Network, label: "User profile" },
   { key: "scope", icon: Network, label: "Knowledge scope" },
@@ -332,12 +328,6 @@ export default function MemoryWorkbench({
     return entry ? t(entry.label) : docKey;
   }, [docKey, nav, t]);
 
-  const handleRunComplete = useCallback(() => {
-    void loadDoc();
-    void loadLines();
-    void loadOverview();
-  }, [loadDoc, loadLines, loadOverview]);
-
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 px-6 py-4 md:px-10">
       <div className="flex items-center justify-between gap-3">
@@ -458,15 +448,6 @@ export default function MemoryWorkbench({
           )}
         </section>
 
-        {/* ── Right: LLM work area ── */}
-        <aside className="min-h-0">
-          <MemoryRunPanel
-            layer={layer}
-            docKey={docKey}
-            onRunComplete={handleRunComplete}
-            onDocUpdated={handleRunComplete}
-          />
-        </aside>
       </div>
     </div>
   );

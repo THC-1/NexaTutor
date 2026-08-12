@@ -7,14 +7,9 @@ register a pointer we must answer two questions for the user:
 1. **Does this folder actually hold a ready index for the chosen engine?**
    We reuse the standard version discovery (``list_kb_versions``) so the same
    "is this KB ready?" logic that lists ordinary KBs decides linkability.
-2. **Was that index built with a compatible embedding model?** A local vector /
-   graph index is only queryable by the embedding model that built it. A
-   mismatch makes LlamaIndex error loudly and the graph engines fail silently,
-   so we surface a clear verdict the UI can confirm.
-
-PageIndex is deliberately not linkable: its index lives in the cloud (the local
-folder holds only a doc-id manifest), so there is nothing self-contained to
-mount.
+2. **Was that index built with a compatible embedding model?** A local vector
+   index is only queryable by the embedding model that built it, so we surface
+   a clear verdict the UI can confirm.
 """
 
 from __future__ import annotations
@@ -29,19 +24,15 @@ from typing import Any, Optional
 # restriction, which is correct for the local/self-hosted single-trust-domain
 # deployments this feature targets. Shared multi-user servers should set it so a
 # non-admin cannot point a KB at another user's data or system paths.
-LINK_ROOTS_ENV = "DEEPTUTOR_LINKED_FOLDER_ROOTS"
+LINK_ROOTS_ENV = "NEXATUTOR_LINKED_FOLDER_ROOTS"
 
 from deeptutor.services.rag.factory import (
     DEFAULT_PROVIDER,
-    GRAPHRAG_PROVIDER,
-    LIGHTRAG_PROVIDER,
-    PAGEINDEX_PROVIDER,
     normalize_provider_name,
 )
 
-# Engines whose index is self-contained on disk and therefore mountable. The
-# cloud-backed PageIndex is excluded — see module docstring.
-LINKABLE_PROVIDERS = frozenset({DEFAULT_PROVIDER, GRAPHRAG_PROVIDER, LIGHTRAG_PROVIDER})
+# The standard local LlamaIndex storage is self-contained and mountable.
+LINKABLE_PROVIDERS = frozenset({DEFAULT_PROVIDER})
 
 
 @dataclass
@@ -69,12 +60,14 @@ class ProbeResult:
 
 
 def provider_is_linkable(provider: str) -> bool:
-    return normalize_provider_name(provider) in LINKABLE_PROVIDERS
+    return (provider or "").strip().lower() in LINKABLE_PROVIDERS
 
 
 def allowed_link_roots() -> list[Path]:
     """Resolved allowlist of roots a linked folder may live under (may be empty)."""
-    raw = os.environ.get(LINK_ROOTS_ENV, "").strip()
+    raw = os.environ.get(
+        LINK_ROOTS_ENV, os.environ.get("DEEPTUTOR_LINKED_FOLDER_ROOTS", "")
+    ).strip()
     if not raw:
         return []
     roots: list[Path] = []
@@ -124,18 +117,16 @@ def probe_linked_folder(folder_path: str, provider: str) -> ProbeResult:
     the folder cannot be linked; ``warnings`` are non-fatal cautions the user
     confirms. The caller is responsible for any path-jail / access checks.
     """
+    requested_provider = (provider or "").strip().lower()
     provider = normalize_provider_name(provider)
     folder = Path(folder_path).expanduser()
     result = ProbeResult(provider=provider, external_path=str(folder))
 
-    if provider == PAGEINDEX_PROVIDER:
+    if requested_provider not in LINKABLE_PROVIDERS:
         result.error = (
-            "PageIndex indexes live in the cloud, not in a local folder, so they "
-            "cannot be linked. Create a PageIndex knowledge base instead."
+            f"Engine '{requested_provider or provider}' does not support linking an existing "
+            "folder."
         )
-        return result
-    if provider not in LINKABLE_PROVIDERS:
-        result.error = f"Engine '{provider}' does not support linking an existing folder."
         return result
 
     if not folder.exists():
@@ -182,12 +173,7 @@ def _check_embedding(provider: str, version: dict, result: ProbeResult) -> None:
     compat = result.embedding
     compat.current_model = current.model if current else None
 
-    # LlamaIndex stores the embedding hash in the version signature; the graph
-    # engines stamp it separately (see embedding_meta_fields).
-    if provider == DEFAULT_PROVIDER:
-        index_hash = str(version.get("signature") or "")
-    else:
-        index_hash = str(version.get("embedding_signature") or "")
+    index_hash = str(version.get("signature") or "")
     compat.index_model = version.get("embedding_model") or version.get("model")
 
     if current is None:

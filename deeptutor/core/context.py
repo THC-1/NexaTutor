@@ -45,8 +45,7 @@ class UnifiedContext:
         allowed_builtin_tools: Whitelist gating the built-in auto-mounted tools
             (rag / read_memory / web_fetch / …). ``None`` (the product-chat
             default) means "no gating" — every built-in mounts under its usual
-            context condition. A list restricts which built-ins may mount;
-            partners set this so an owner can deny built-ins per companion.
+            context condition. A list restricts which built-ins may mount.
         active_capability: Capability name selected by the user, or None for plain chat.
         knowledge_bases: KB names to use for RAG.
         attachments: Images / files sent with the message.

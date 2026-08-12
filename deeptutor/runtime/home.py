@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-DEEPTUTOR_HOME_ENV = "DEEPTUTOR_HOME"
+NEXATUTOR_HOME_ENV = "NEXATUTOR_HOME"
+DEEPTUTOR_HOME_ENV = NEXATUTOR_HOME_ENV
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -21,7 +22,7 @@ def get_runtime_home(home: str | Path | None = None) -> Path:
     ``<home>/data``.
     """
 
-    raw = home if home is not None else os.getenv(DEEPTUTOR_HOME_ENV)
+    raw = home if home is not None else os.getenv(NEXATUTOR_HOME_ENV, os.getenv("DEEPTUTOR_HOME"))
     if raw is None or str(raw).strip() == "":
         return Path.cwd().resolve()
     return Path(raw).expanduser().resolve()
@@ -35,6 +36,7 @@ def get_runtime_data_root(home: str | Path | None = None) -> Path:
 
 __all__ = [
     "DEEPTUTOR_HOME_ENV",
+    "NEXATUTOR_HOME_ENV",
     "PACKAGE_ROOT",
     "get_runtime_home",
     "get_runtime_data_root",

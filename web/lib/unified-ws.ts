@@ -71,10 +71,6 @@ export interface StartTurnMessage {
   }[];
   history_references?: string[];
   question_notebook_references?: number[];
-  book_references?: {
-    book_id: string;
-    page_ids: string[];
-  }[];
   persona?: string;
   llm_selection?: LLMSelection | null;
   /** Edit-branching: when present (even as ``null``) the new user message

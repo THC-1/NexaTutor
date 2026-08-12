@@ -40,14 +40,10 @@ from deeptutor.services.provider_registry import PROVIDERS, ProviderSpec, find_b
 FEATURED_LLM_PROVIDERS: tuple[str, ...] = (
     "openai",
     "anthropic",
-    "deepseek",
-    "dashscope",
-    "zhipu",
-    "moonshot",
     "gemini",
-    "siliconflow",
-    "openrouter",
-    "ollama",
+    "deepseek",
+    "custom",
+    "custom_anthropic",
 )
 
 # Fallback model lists used only when ``GET {base_url}/models`` fails or the
@@ -61,20 +57,7 @@ LLM_FALLBACK_MODELS: dict[str, tuple[str, ...]] = {
         "claude-haiku-4-5-20251001",
     ),
     "deepseek": ("deepseek-chat", "deepseek-reasoner"),
-    "dashscope": ("qwen-plus", "qwen-turbo", "qwen-max", "qwen3-coder-plus"),
-    "zhipu": ("glm-4.6", "glm-4.5", "glm-4-flash"),
-    "moonshot": ("kimi-k2.6", "kimi-k2.5", "kimi-latest"),
     "gemini": ("gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"),
-    "siliconflow": (
-        "Qwen/Qwen3-Coder-480B-A35B-Instruct",
-        "deepseek-ai/DeepSeek-V3",
-    ),
-    "openrouter": (
-        "openai/gpt-4o-mini",
-        "anthropic/claude-sonnet-4-6",
-        "deepseek/deepseek-chat",
-    ),
-    "ollama": ("llama3.2", "qwen2.5", "mistral"),
 }
 
 # Featured embedding providers — display order. Source of truth for label /

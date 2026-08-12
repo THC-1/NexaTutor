@@ -1,7 +1,7 @@
 """OpenAI-compatible provider for all non-Anthropic LLM APIs.
 
 Uses the official ``openai.AsyncOpenAI`` SDK to talk to any OpenAI-compatible
-endpoint (OpenAI, DeepSeek, Gemini, Moonshot, MiniMax, gateways, local, etc.).
+endpoint (OpenAI, DeepSeek, Gemini, or a user-supplied compatible service).
 """
 
 from __future__ import annotations
@@ -48,10 +48,6 @@ _ALLOWED_MSG_KEYS = frozenset(
 )
 _ALNUM = string.ascii_letters + string.digits
 
-_DEFAULT_OPENROUTER_HEADERS = {
-    "HTTP-Referer": "https://github.com/HKUDS/DeepTutor",
-    "X-OpenRouter-Title": "DeepTutor",
-}
 _RESPONSES_FAILURE_THRESHOLD = 2
 _RESPONSES_PROBE_INTERVAL_S = 300.0
 
@@ -78,12 +74,6 @@ def _coerce_dict(value: Any) -> dict[str, Any] | None:
         if isinstance(dumped, dict) and dumped:
             return dumped
     return None
-
-
-def _uses_openrouter(spec: "ProviderSpec | None", api_base: str | None) -> bool:
-    if spec and spec.name == "openrouter":
-        return True
-    return bool(api_base and "openrouter" in api_base.lower())
 
 
 def _is_direct_openai_base(api_base: str | None) -> bool:
@@ -131,8 +121,6 @@ class OpenAICompatProvider(LLMProvider):
         effective_base = api_base or (spec.default_api_base if spec else None) or None
         self._effective_base = effective_base
         default_headers: dict[str, str] = {"x-session-affinity": uuid.uuid4().hex}
-        if _uses_openrouter(spec, effective_base):
-            default_headers.update(_DEFAULT_OPENROUTER_HEADERS)
         if extra_headers:
             default_headers.update(extra_headers)
 
@@ -320,11 +308,10 @@ class OpenAICompatProvider(LLMProvider):
         reasoning_effort: str | None,
     ) -> bool:
         spec = self._spec
-        if spec and spec.name not in {"openai", "github_copilot"}:
+        if spec and spec.name != "openai":
             return False
-        if spec is None or spec.name != "github_copilot":
-            if not _is_direct_openai_base(self._effective_base):
-                return False
+        if not _is_direct_openai_base(self._effective_base):
+            return False
 
         model_name = (model or self.default_model).lower()
         wants_reasoning = bool(reasoning_effort and reasoning_effort.lower() != "none")
@@ -690,8 +677,6 @@ class OpenAICompatProvider(LLMProvider):
                     self._record_responses_success(model, reasoning_effort)
                     return result
                 except Exception as responses_error:
-                    if self._spec and self._spec.name == "github_copilot":
-                        raise
                     if not self._should_fallback_from_responses_error(responses_error):
                         raise
                     self._record_responses_failure(model, reasoning_effort)
@@ -803,8 +788,6 @@ class OpenAICompatProvider(LLMProvider):
                         reasoning_content=reasoning_content,
                     )
                 except Exception as responses_error:
-                    if self._spec and self._spec.name == "github_copilot":
-                        raise
                     if not self._should_fallback_from_responses_error(responses_error):
                         raise
                     self._record_responses_failure(model, reasoning_effort)

@@ -1,7 +1,7 @@
 import { loadFromStorage, saveToStorage } from "@/lib/persistence";
 
 const STORAGE_KEY = "playground_capability_configs";
-export const FRONTEND_HIDDEN_TOOLS = new Set(["geogebra_analysis"]);
+export const FRONTEND_HIDDEN_TOOLS = new Set<string>();
 
 export function filterFrontendTools(tools: string[]): string[] {
   return tools.filter((tool) => !FRONTEND_HIDDEN_TOOLS.has(tool));

@@ -14,7 +14,7 @@ from deeptutor.core.context import Attachment, UnifiedContext
 from deeptutor.core.stream_bus import StreamBus
 
 # ---------------------------------------------------------------------------
-# Multi-user legacy migration guard
+# Local credential safety guard
 # ---------------------------------------------------------------------------
 
 
@@ -28,17 +28,10 @@ def _tree_snapshot(root: Path) -> frozenset[str]:
 #: guard below always watches the developer's real tree, whatever a test does.
 _REAL_OWNER_SECRET_TREES: tuple[Path, ...] = ()
 try:  # pragma: no cover - import-time wiring
-    from deeptutor.multi_user.paths import ADMIN_WORKSPACE_ROOT as _REAL_ADMIN_ROOT
-    from deeptutor.multi_user.paths import SYSTEM_ROOT as _REAL_SYSTEM_ROOT
+    from deeptutor.services.path_service import PathService
 
     _REAL_OWNER_SECRET_TREES = (
-        _REAL_SYSTEM_ROOT / "user-secrets",
-        _REAL_SYSTEM_ROOT / "user-mcp",
-        _REAL_SYSTEM_ROOT / "user-cli-apps",
-        # Not per-owner, but the same failure: a test that forgets to redirect
-        # the roots would record installs the developer's running instance then
-        # offers to a chat turn, for apps that are not on disk.
-        _REAL_ADMIN_ROOT / "cli-apps",
+        PathService.get_instance().get_user_root() / "private" / "openai-codex",
     )
 except Exception:  # pragma: no cover
     pass
@@ -46,47 +39,17 @@ except Exception:  # pragma: no cover
 
 @pytest.fixture(autouse=True)
 def _guard_real_owner_secrets():
-    """A test must never write into the real per-account state trees.
-
-    These hold OAuth refresh tokens, MCP credentials, and which CLI apps are
-    installed. A test that redirects ``ADMIN_WORKSPACE_ROOT`` but forgets
-    ``SYSTEM_ROOT`` — or that calls ``monkeypatch.undo()`` and so reverts a
-    fixture's redirection — lands here, and without this guard the failure is
-    silent: the test passes while the developer's tree quietly grows files named
-    after fixture users.
-    """
+    """A test must never write into the real local Codex credential tree."""
     before = {root: _tree_snapshot(root) for root in _REAL_OWNER_SECRET_TREES}
     yield
     for root, snapshot in before.items():
         added = _tree_snapshot(root) - snapshot
         if added:
-            for path in added:
-                Path(path).unlink(missing_ok=True)
             pytest.fail(
-                "test wrote into the real per-account state tree "
-                f"{root}: {sorted(added)}. Redirect paths.SYSTEM_ROOT and "
-                "paths.ADMIN_WORKSPACE_ROOT (see "
+                "test wrote into the real local credential tree "
+                f"{root}: {sorted(added)}. Redirect LocalWorkspace (see "
                 "tests/services/codex_auth/test_credential_location.py)."
             )
-
-
-@pytest.fixture(autouse=True)
-def _guard_legacy_multi_user_migration(monkeypatch):
-    """Tests must never migrate the developer's real ``multi-user/`` tree.
-
-    ``migrate_legacy_multi_user_tree`` runs on the auth/grants/workspace read
-    paths, so any test that exercises those without full path isolation would
-    otherwise move a real sibling ``multi-user/`` into ``data/``. Point the
-    legacy root at a path that cannot exist and reset the once-flag;
-    migration tests opt back in by patching the constants themselves.
-    """
-    from deeptutor.multi_user import paths
-
-    monkeypatch.setattr(
-        paths, "LEGACY_MULTI_USER_ROOT", Path("/nonexistent/deeptutor-legacy-multi-user")
-    )
-    monkeypatch.setattr(paths, "_legacy_migration_done", False)
-    yield
 
 
 # ---------------------------------------------------------------------------

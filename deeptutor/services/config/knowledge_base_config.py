@@ -27,10 +27,6 @@ def _default_payload() -> dict[str, Any]:
             "default_kb": None,
             "rag_provider": DEFAULT_PROVIDER,
             "search_mode": "hybrid",
-            # Per-engine default retrieval mode, set from the engine cards
-            # (e.g. {"lightrag": "hybrid", "graphrag": "local"}). A KB's own
-            # ``search_mode`` still wins; this is the fallback for that engine.
-            "provider_modes": {},
         },
         "knowledge_bases": {},
     }
@@ -161,19 +157,6 @@ class KnowledgeBaseConfigService:
 
     def set_search_mode(self, kb_name: str, mode: str) -> None:
         self.set_kb_config(kb_name, {"search_mode": mode})
-
-    def get_provider_mode(self, provider: str) -> str:
-        """Global default retrieval mode for an engine ("" when unset)."""
-        self._refresh()
-        modes = self._config.get("defaults", {}).get("provider_modes", {})
-        return str(modes.get(provider, "")) if isinstance(modes, dict) else ""
-
-    def set_provider_mode(self, provider: str, mode: str) -> None:
-        self._refresh()
-        defaults = self._config.setdefault("defaults", _default_payload()["defaults"])
-        modes = defaults.setdefault("provider_modes", {})
-        modes[provider] = mode
-        self._save()
 
     def delete_kb_config(self, kb_name: str) -> None:
         self._refresh()

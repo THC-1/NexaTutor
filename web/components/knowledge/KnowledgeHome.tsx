@@ -3,79 +3,28 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Boxes,
   Check,
   ChevronRight,
-  Cloud,
-  Cpu,
   Database,
   FolderOpen,
-  Network,
   Plus,
   Search,
-  Server,
   Star,
-  Workflow,
-  type LucideIcon,
 } from "lucide-react";
 import {
   kbDocCount,
   kbHasLiveProgress,
   kbNeedsReindex,
-  kbProvider,
   resolveKbStatus,
   type KnowledgeBase,
 } from "@/lib/knowledge-helpers";
-import type { RagProviderSummary } from "@/lib/knowledge-api";
 
 interface KnowledgeHomeProps {
   kbs: KnowledgeBase[];
-  providers: RagProviderSummary[];
   onOpenKb: (name: string) => void;
-  onOpenEngine: (id: string) => void;
   onCreate: () => void;
   /** Open the create flow pre-set to link an Obsidian vault. */
   onConnectObsidian: () => void;
-}
-
-const ENGINE_ICONS: Record<string, LucideIcon> = {
-  llamaindex: Boxes,
-  pageindex: Cloud,
-  graphrag: Network,
-  lightrag: Workflow,
-  "lightrag-server": Server,
-};
-
-type EngineStatus = "ready" | "needs_key" | "unavailable";
-
-function engineStatus(p: RagProviderSummary): EngineStatus {
-  if (p.requires_api_key && p.configured === false) return "needs_key";
-  if (p.configured === false) return "unavailable";
-  return "ready";
-}
-
-function EngineStatusBadge({ status }: { status: EngineStatus }) {
-  const { t } = useTranslation();
-  if (status === "ready") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
-        <Check className="h-3 w-3" />
-        {t("Ready")}
-      </span>
-    );
-  }
-  if (status === "needs_key") {
-    return (
-      <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-        {t("Needs key")}
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center rounded-full bg-[var(--muted)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--muted-foreground)]">
-      {t("Not installed")}
-    </span>
-  );
 }
 
 function StatusDot({ kb }: { kb: KnowledgeBase }) {
@@ -96,28 +45,17 @@ function StatusDot({ kb }: { kb: KnowledgeBase }) {
 
 export default function KnowledgeHome({
   kbs,
-  providers,
   onOpenKb,
-  onOpenEngine,
   onCreate,
   onConnectObsidian,
 }: KnowledgeHomeProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
-  const providerName = (id: string) =>
-    providers.find((p) => p.id === id)?.name ??
-    id.charAt(0).toUpperCase() + id.slice(1);
 
   const obsidianCount = useMemo(
     () => kbs.filter((kb) => kb.metadata?.type === "obsidian").length,
     [kbs],
   );
-  const kbCountByProvider = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const kb of kbs)
-      counts[kbProvider(kb)] = (counts[kbProvider(kb)] ?? 0) + 1;
-    return counts;
-  }, [kbs]);
 
   const filteredKbs = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -135,7 +73,7 @@ export default function KnowledgeHome({
               {t("Knowledge Center")}
             </h1>
             <p className="mt-1 text-[12.5px] text-[var(--muted-foreground)]">
-              {t("Manage your knowledge bases and retrieval engines.")}
+              {t("Manage your local knowledge bases and documents.")}
             </p>
           </div>
           <button
@@ -148,52 +86,9 @@ export default function KnowledgeHome({
           </button>
         </div>
 
-        {/* Retrieval engines */}
+        {/* Connected local sources */}
         <section className="mt-8">
-          <h2 className="mb-3 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-            <Cpu className="h-3.5 w-3.5" />
-            {t("Retrieval engines")}
-          </h2>
           <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2">
-            {providers.map((p) => {
-              const status = engineStatus(p);
-              const Icon = ENGINE_ICONS[p.id] ?? Boxes;
-              const count = kbCountByProvider[p.id] ?? 0;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => onOpenEngine(p.id)}
-                  className="group flex flex-col gap-2 rounded-2xl border border-[var(--border)] p-3.5 text-left transition-colors hover:border-[var(--ring)]"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Icon
-                        className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]"
-                        strokeWidth={1.7}
-                      />
-                      <span className="truncate text-[13.5px] font-medium text-[var(--foreground)]">
-                        {p.name}
-                      </span>
-                    </div>
-                    <EngineStatusBadge status={status} />
-                  </div>
-                  <p className="line-clamp-2 text-[11.5px] leading-snug text-[var(--muted-foreground)]">
-                    {p.description}
-                  </p>
-                  <div className="mt-auto flex items-center gap-2 pt-1 text-[11px] text-[var(--muted-foreground)]">
-                    {p.modes && p.modes.length > 0 && p.default_mode && (
-                      <span className="rounded-full border border-[var(--border)] px-1.5 py-0.5 font-mono">
-                        {p.default_mode}
-                      </span>
-                    )}
-                    {count > 0 && <span>{t("{{count}} KB", { count })}</span>}
-                    <ChevronRight className="ml-auto h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-60" />
-                  </div>
-                </button>
-              );
-            })}
-
             {/* Obsidian — a connected source, not a config-backed engine: a
                 pointer to a live vault the tutor reads & writes in place. Shown
                 here for discoverability; clicking opens the unified create flow
@@ -310,9 +205,6 @@ export default function KnowledgeHome({
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
-                      <span className="rounded-full border border-[var(--border)] px-1.5 py-0.5">
-                        {providerName(kbProvider(kb))}
-                      </span>
                       {docs !== null && (
                         <span>
                           {docs} {t("docs")}
