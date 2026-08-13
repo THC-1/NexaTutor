@@ -14,7 +14,7 @@ P0、Partners、P3、P4、P5、P6、P7 与 P8 已完成。Partner / IM、MCP、C
 
 P9/P10、P11 与 P12 第一层已完成。Python 顶级 namespace 改名延后单独决策；不得机械替换内部 import 或自动迁移用户数据、浏览器持久化键。
 
-Memory L1 / L2 / L3 三层视图及手动触发能力属于 Core，必须有可发现的前端入口。L1 保留按 Surface 手动 Refresh；L2 / L3 保留逐文档 Update / Audit / Dedup 入口及必要运行状态。Graph、Budget、Chunking、Reference 和内部调度细节可默认隐藏。当前后端和 `MemoryRunPanel` 仍在，下一小目标是补齐 L2 / L3 工作台入口并增加正向契约测试。
+Memory L1 / L2 / L3 三层视图及手动触发能力属于 Core，并已恢复可发现的前端入口。L1 保留按 Surface 手动 Refresh；L2 / L3 工作台保留 Update / Audit / Dedup 入口及必要运行状态。Graph、Budget、Chunking、Reference 和内部调度细节可默认隐藏。Memory 主导航、响应式工作台和正向契约测试必须持续保护。
 
 所有施工以 `NEXATUTOR_SLIMMING_PLAN_REVISED新版.md` 为唯一执行基准。
 

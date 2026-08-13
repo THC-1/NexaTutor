@@ -29,7 +29,7 @@
 
 > 交接日期：2026-08-12
 > 工作目录：`D:\games\DeepTutor`
-> 当前阶段：P0-P11 与 P12 第一层已完成；下一小目标为补齐 Memory 手动触发入口
+> 当前阶段：P0-P11 与 P12 第一层已完成；Memory 手动触发入口已恢复
 > 本文用途：供新会话快速恢复事实、约束、验证证据和下一步施工边界
 
 ## 1. 新会话先读什么
@@ -89,9 +89,9 @@
 ## 1.2 P9 / P10 状态
 
 - Memory L1 / L2 / L3、可发现入口和手动触发能力均为 Core。L1 按 Surface 提供手动 Refresh；L2 / L3 按文档提供 Update / Audit / Dedup，并展示必要运行状态。Graph、Budget、Chunking、Reference 和内部调度细节可默认隐藏。
-- Memory Router、Store、Consolidator、数据模型、运行 API、`MemoryRunPanel` 和用户历史数据均保留；`/memory`、`/memory/l1`、`/memory/l2`、`/memory/l3` 路由可用。当前待补齐 L2 / L3 工作台的运行面板和可发现的 Memory 产品入口。
+- Memory Router、Store、Consolidator、数据模型、运行 API、`MemoryRunPanel` 和用户历史数据均保留；`/memory`、`/memory/l1`、`/memory/l2`、`/memory/l3` 路由可用。Memory 已恢复主导航入口，L2 / L3 工作台已重新挂载运行面板；L3 默认进入可运行 Consolidator 的 Recent summary，Preferences 继续保留显式编辑入口。
 - P10 Settings / Navigation 保持收口，但 Memory 必须使用独立导航或学习空间中的明确入口，不能只保留不可发现的路由。Settings Hub 隐藏 Network、image、stt、tts 独立入口，保留兼容页/API/旧配置；status 与 mineru 页面继续重定向，Hub 保留状态条。Attachments、Capabilities、Tools 和本地 Agents 归入 Chat 与工具信息架构。MinerU 仍是可选文档解析路径，不能删除。
-- Memory 入口补齐时必须同步更新前端契约，正向断言 L1 / L2 / L3 导航、L1 Refresh、L2 / L3 Update / Audit / Dedup 及运行状态，并完成 Memory / Settings / API、Node、i18n、lint、TypeScript 和 production build 验证。
+- Memory 正向契约断言 L1 / L2 / L3 导航、L1 Refresh、L2 / L3 Update / Audit / Dedup 及运行状态；响应式工作台必须在桌面保持三栏，在中小屏按自然文档流排列且不得重叠或横向溢出。
 - P11 只允许最终依赖清洗：先证明运行时、测试、CLI、动态 import、optional extra 和构建引用为零，再删除专属依赖；不删除 Memory、MinerU、voice/image、Sandbox、My Agents/Subagents 或 Codex OAuth 共享依赖。
 
 ## 2. Git 与 GitHub 当前状态

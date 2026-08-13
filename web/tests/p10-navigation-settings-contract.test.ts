@@ -8,10 +8,16 @@ const read = (filePath: string) =>
 
 test("primary navigation follows the NexaTutor core information architecture", () => {
   const source = read("components/sidebar/SidebarShell.tsx");
-  for (const href of ["/home", "/knowledge", "/space", "/co-writer", "/settings"]) {
+  for (const href of [
+    "/home",
+    "/knowledge",
+    "/space",
+    "/co-writer",
+    "/memory",
+    "/settings",
+  ]) {
     assert.match(source, new RegExp(`href: "${href.replace("/", "\\/")}"`));
   }
-  assert.doesNotMatch(source, /href: "\/memory"/);
   assert.doesNotMatch(source, /href: "\/agents"/);
 });
 

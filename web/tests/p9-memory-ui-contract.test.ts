@@ -25,12 +25,28 @@ test("memory hub is user-facing while preserving the L1/L2/L3 model", () => {
   assert.doesNotMatch(hub, /href="\/memory\/graph"/);
 });
 
-test("preferences have a visible editing route and workbench hides consolidator controls", () => {
+test("preferences remain editable and L2/L3 expose manual consolidator controls", () => {
   const workbench = read("components/memory/MemoryWorkbench.tsx");
+  const runPanel = read("components/memory/MemoryRunPanel.tsx");
 
   assert.match(workbench, /key: "preferences"/);
   assert.match(workbench, /method: "PUT"/);
-  assert.doesNotMatch(workbench, /<MemoryRunPanel/);
+  assert.match(workbench, /<MemoryRunPanel/);
+  for (const mode of ["update", "audit", "dedup"]) {
+    assert.match(runPanel, new RegExp(`key: "${mode}"`));
+  }
+  assert.match(runPanel, /void cancel\(\)/);
+  assert.match(runPanel, /run\.status === "done"/);
+  assert.match(runPanel, /run\.status === "cancelled"/);
+  assert.match(runPanel, /run\.status === "error"/);
+});
+
+test("memory has a discoverable primary navigation entry", () => {
+  const sidebar = read("components/sidebar/SidebarShell.tsx");
+
+  assert.match(sidebar, /href: "\/memory"/);
+  assert.match(sidebar, /label: "Memory"/);
+  assert.match(sidebar, /tooltipKey: "Memory tooltip"/);
 });
 
 test("advanced memory routes and settings no longer expose technical controls", () => {

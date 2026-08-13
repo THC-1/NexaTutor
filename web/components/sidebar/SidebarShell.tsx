@@ -7,6 +7,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useAppShell } from "@/context/AppShellContext";
 import {
   BookOpen,
+  BrainCircuit,
   ChevronDown,
   House,
   LayoutGrid,
@@ -56,6 +57,12 @@ const PRIMARY_NAV: NavEntry[] = [
     label: "Learning Space",
     icon: LayoutGrid,
     tooltipKey: "Space tooltip",
+  },
+  {
+    href: "/memory",
+    label: "Memory",
+    icon: BrainCircuit,
+    tooltipKey: "Memory tooltip",
   },
 ];
 

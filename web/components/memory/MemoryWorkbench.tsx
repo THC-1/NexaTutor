@@ -26,6 +26,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { apiFetch, apiUrl } from "@/lib/api";
+import MemoryRunPanel from "@/components/memory/MemoryRunPanel";
 
 const MarkdownRenderer = dynamic(
   () => import("@/components/common/MarkdownRenderer"),
@@ -157,10 +158,10 @@ const L2_NAV: NavEntry[] = [
 ];
 
 const L3_NAV: NavEntry[] = [
-  { key: "preferences", icon: Network, label: "User preferences" },
   { key: "recent", icon: Network, label: "Recent summary" },
   { key: "profile", icon: Network, label: "User profile" },
   { key: "scope", icon: Network, label: "Knowledge scope" },
+  { key: "preferences", icon: Network, label: "User preferences" },
 ];
 
 type ViewMode = "plain" | "lines";
@@ -328,16 +329,22 @@ export default function MemoryWorkbench({
     return entry ? t(entry.label) : docKey;
   }, [docKey, nav, t]);
 
+  const handleRunComplete = useCallback(() => {
+    void loadDoc();
+    void loadLines();
+    void loadOverview();
+  }, [loadDoc, loadLines, loadOverview]);
+
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 px-6 py-4 md:px-10">
-      <div className="flex items-center justify-between gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto px-4 py-4 md:px-6 xl:overflow-hidden xl:px-10">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Breadcrumb layer={layer} label={nicelabel} t={t} />
         <LayerSwitcher current={layer} t={t} />
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[180px_minmax(0,1fr)_360px] gap-4">
+      <div className="grid shrink-0 grid-cols-1 gap-4 lg:grid-cols-[180px_minmax(0,1fr)] xl:min-h-0 xl:flex-1 xl:grid-cols-[180px_minmax(0,1fr)_360px]">
         {/* ── Left rail ── */}
-        <aside className="min-h-0 overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--card)] p-2">
+        <aside className="min-h-0 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--card)] p-2 lg:row-span-2 xl:row-span-1">
           <ul className="space-y-0.5">
             {nav.map(({ key, icon: Icon, label }) => {
               const doc = overview[key];
@@ -411,7 +418,7 @@ export default function MemoryWorkbench({
           </div>
           <div
             ref={previewRef}
-            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5"
+            className="min-h-[360px] flex-1 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--card)] p-5 xl:min-h-0"
           >
             {editing ? (
               <textarea
@@ -448,6 +455,15 @@ export default function MemoryWorkbench({
           )}
         </section>
 
+        {/* ── Manual consolidator controls ── */}
+        <aside className="min-h-[420px] lg:col-start-2 xl:col-start-auto xl:min-h-0">
+          <MemoryRunPanel
+            layer={layer}
+            docKey={docKey}
+            onRunComplete={handleRunComplete}
+            onDocUpdated={handleRunComplete}
+          />
+        </aside>
       </div>
     </div>
   );
