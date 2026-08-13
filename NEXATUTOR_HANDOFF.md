@@ -14,7 +14,7 @@
 | Chat / Solve / Research / Quiz / Mastery | `pydantic`, `PyYAML`, `jinja2`, `openai`, `anthropic`, `tiktoken`, `tenacity` | Core 保留 |
 | Knowledge / Citation | `llama-index`, BM25 retriever, FAISS vector store, `faiss-cpu`, `numpy`, `PyMuPDF` | LlamaIndex → FAISS + BM25 Hybrid → Citation 保留 |
 | Notebook / Question Bank | `pydantic`, `aiosqlite`, office/PDF 读取包 | Core 保留 |
-| Memory L1/L2/L3 | `PyYAML`, `aiosqlite`, FastAPI；前端 `cytoscape` 支持保留的 Graph 兼容页 | Backend 和历史数据保留 |
+| Memory L1/L2/L3 | `PyYAML`, `aiosqlite`, FastAPI；前端 Memory workbench | Core 保留；三层视图、手动触发入口、Backend 和历史数据均保留 |
 | My Agents / Subagents | `httpx`, `prompt_toolkit`, `pyte`, 本地 CLI/PTY 进程能力 | Core 保留；`pyte` 必须进入 CLI wheel |
 | OpenAI Codex OAuth | `httpx`, Codex provider / callback router | 独立 Core 保留 |
 | LLM / Embedding / Search | `openai`, `anthropic`, `dashscope`, `perplexityai`, `aiohttp`, `httpx`, `requests`, `ddgs` | Registry 独立，均有真实调用，保留 |
@@ -29,7 +29,7 @@
 
 > 交接日期：2026-08-12
 > 工作目录：`D:\games\DeepTutor`
-> 当前阶段：P0、批次 1、批次 3、批次 4、批次 5、批次 6、批次 7、批次 8 已完成；下一步为批次 9 Memory UI 精简
+> 当前阶段：P0-P11 与 P12 第一层已完成；下一小目标为补齐 Memory 手动触发入口
 > 本文用途：供新会话快速恢复事实、约束、验证证据和下一步施工边界
 
 ## 1. 新会话先读什么
@@ -86,11 +86,12 @@
 
 下方“Partner 第一小步”和“尚未完成”等段落是初始交接快照；与本节冲突时，以本节和实际代码负断言为准。
 
-## 1.2 P9 / P10 完成状态（2026-08-12）
+## 1.2 P9 / P10 状态
 
-- P9 Memory UI 已完成：默认 Memory Hub 以用户偏好、学习目标/画像、当前知识水平、最近学习内容、主动保存的长期记忆为入口；L1 / L2 / L3 技术层级展示按用户决策保留。Graph、Consolidator Run、Budget、Audit、Chunking、Reference 等高级控制默认不再暴露；Graph 旧路由重定向到 `/memory`。Memory Router、Store、Consolidator、数据模型、CLI 和用户历史数据未删除或迁移。
-- P10 Settings / Navigation 已完成：主导航为对话、知识库、学习空间、写作（Optional）、设置；Memory 与 My Agents 由学习空间个性化入口承接，原路由继续可用。Settings Hub 隐藏 Network、image、stt、tts 独立入口，保留兼容页/API/旧配置；status 与 mineru 页面继续重定向，Hub 保留状态条。Attachments、Capabilities、Tools 和本地 Agents 归入 Chat 与工具信息架构。MinerU 仍是可选文档解析路径，不能删除。
-- P9/P10 新增前端契约通过；Memory / Settings / API 定向回归 219 passed；前端 Node 275 passed、i18n parity、lint 0 error（26 个既有 warning）、TypeScript、production build、pip check、compileall、git diff --check 通过。FastAPI import 以模块编译和 API pytest 覆盖；未运行全新环境 E2E。
+- Memory L1 / L2 / L3、可发现入口和手动触发能力均为 Core。L1 按 Surface 提供手动 Refresh；L2 / L3 按文档提供 Update / Audit / Dedup，并展示必要运行状态。Graph、Budget、Chunking、Reference 和内部调度细节可默认隐藏。
+- Memory Router、Store、Consolidator、数据模型、运行 API、`MemoryRunPanel` 和用户历史数据均保留；`/memory`、`/memory/l1`、`/memory/l2`、`/memory/l3` 路由可用。当前待补齐 L2 / L3 工作台的运行面板和可发现的 Memory 产品入口。
+- P10 Settings / Navigation 保持收口，但 Memory 必须使用独立导航或学习空间中的明确入口，不能只保留不可发现的路由。Settings Hub 隐藏 Network、image、stt、tts 独立入口，保留兼容页/API/旧配置；status 与 mineru 页面继续重定向，Hub 保留状态条。Attachments、Capabilities、Tools 和本地 Agents 归入 Chat 与工具信息架构。MinerU 仍是可选文档解析路径，不能删除。
+- Memory 入口补齐时必须同步更新前端契约，正向断言 L1 / L2 / L3 导航、L1 Refresh、L2 / L3 Update / Audit / Dedup 及运行状态，并完成 Memory / Settings / API、Node、i18n、lint、TypeScript 和 production build 验证。
 - P11 只允许最终依赖清洗：先证明运行时、测试、CLI、动态 import、optional extra 和构建引用为零，再删除专属依赖；不删除 Memory、MinerU、voice/image、Sandbox、My Agents/Subagents 或 Codex OAuth 共享依赖。
 
 ## 2. Git 与 GitHub 当前状态

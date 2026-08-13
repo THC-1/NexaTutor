@@ -22,7 +22,7 @@
 - P5 已完成：PocketBase / 外部集成 Sidecar 与公网部署能力已按五步裁剪；Session 固定使用本地 SQLite，公网配置收敛为 loopback，Next 同源代理、Sandbox Runner、Codex OAuth 与 My Agents / Subagents 继续保留。
 - P6 已完成：Book / Living Book、Videogen、Math Animator / Manim、GeoGebra、Cron、Built-in GitHub / Brainstorm / Reason / Exec 已按单功能五步删除；受限 Code Execution 已完成 Python-only、显式启用、SYSTEM isolation、argv-only 安全收敛。
 - P7 已完成：RAG Registry 只保留 `llamaindex`，知识库产品路径收敛为 Parse → Chunk → Embedding → FAISS + BM25 Hybrid → Citation；非标准引擎均按五步删除。下一步为 P8 Provider 收缩。
-- P8 已完成：LLM 产品入口收敛为六类，Runtime Registry 为六类加独立 `openai_codex`；29 个非目标 Spec、GitHub Copilot / Azure 专用实现、Copilot CLI 与专属依赖已删除。Provider Key 改为普通响应不可读的 write-only 三态更新。下一步为 P9 Memory UI 精简。
+- P8 已完成：LLM 产品入口收敛为六类，Runtime Registry 为六类加独立 `openai_codex`；29 个非目标 Spec、GitHub Copilot / Azure 专用实现、Copilot CLI 与专属依赖已删除。Provider Key 改为普通响应不可读的 write-only 三态更新。
 
 ---
 
@@ -1136,13 +1136,13 @@ P8 完成证据（2026-08-12）：定向与 LLM 组合回归 246 passed；Chat /
 
 ### 批次 9：Memory UI 与设置精简
 
-完成证据（2026-08-12）：P9 保留 L1 / L2 / L3 技术层级展示，但将默认首页改为用户语义入口：用户偏好、学习目标/画像、当前知识水平、最近学习内容、主动保存的长期记忆。Memory Graph、手工 Consolidator Run、Budget / Audit / Chunking / Reference 参数不再出现在默认产品入口；旧 Graph 路由兼容重定向到 `/memory`。未修改 Memory Backend、Router、数据模型、Consolidation、历史 Markdown 或用户数据。新增前端契约测试，Memory 后端与 resolver 回归 124 passed。
+P9 保留 L1 / L2 / L3 三层记忆、手动触发能力及其前端入口。默认 Memory Hub 同时提供用户语义入口和三层技术视图；Memory 必须有可发现的产品入口。L1 按 Surface 提供手动 Refresh；L2 / L3 在对应文档工作台提供 Update、Audit、Dedup，并展示运行中、完成、失败和取消等必要状态。Memory Backend、Router、数据模型、Consolidation、历史 Markdown 和用户数据均保留。Memory Graph、Budget、Chunking、Reference 参数和内部调度细节可默认隐藏。
 
 第一阶段：
 
 > 只简化 UI 与配置暴露，不重写底层 Memory 数据模型。
 
-用户只看到：
+默认首页优先提供用户语义入口，同时保留可进入的三层技术视图：
 
 ```text
 我的记忆
@@ -1150,16 +1150,26 @@ P8 完成证据（2026-08-12）：定向与 LLM 组合回归 246 passed；Chat /
 ├── 学习目标
 ├── 当前知识水平
 ├── 最近学习内容
-└── 主动保存的长期记忆
+├── 主动保存的长期记忆
+└── 三层记忆
+    ├── L1：按 Surface 查看并手动 Refresh
+    ├── L2：按文档查看并手动 Update / Audit / Dedup
+    └── L3：按文档查看并手动 Update / Audit / Dedup
 ```
 
 默认隐藏：
 
-- L1 / L2 / L3 技术结构
 - Memory Graph
 - Consolidator Budget
-- 多 Surface 审计参数
+- Chunking / Reference 等底层参数
 - 内部调度细节
+
+不得隐藏或删除：
+
+- L1 / L2 / L3 技术结构及层间导航
+- L1 手动 Refresh
+- L2 / L3 手动 Update、Audit、Dedup
+- 手动运行所需的模型选择、必要反馈、取消与错误状态
 
 待 NexaTutor 稳定后，如确认原 Memory Backend 过重，再单独启动：
 
@@ -1218,11 +1228,11 @@ NexaTutor
 | `/settings/stt` | Optional，默认隐藏 |
 | `/settings/tts` | Optional，默认隐藏 |
 | `/settings/video` | Remove |
-| `/memory/*` 高级页面 | 默认隐藏，底层数据暂保留 |
+| `/memory/*` | 保留可发现入口、L1/L2/L3 导航及手动 Refresh / Update / Audit / Dedup；Graph 与底层调参可默认隐藏 |
 | Persona | 放入“学习空间 → 个性化” |
 | 本地 Skill | Optional，放入“学习空间 → 个性化” |
 
-“我的记忆”第一阶段继续保留独立入口或放入“学习空间 → 个性化”；正式删除现有 Memory 顶级入口前，必须先完成替代入口，不能让用户失去查看与编辑记忆的能力。
+“我的记忆”必须保留可发现入口，可使用独立入口或“学习空间 → 个性化”中的明确入口；不得让用户失去查看、编辑或手动触发 L1 / L2 / L3 记忆处理的能力。
 
 ---
 

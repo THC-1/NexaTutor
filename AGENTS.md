@@ -10,9 +10,11 @@
 
 NexaTutor 已完成 P11/P12 第一层：分发名、正式 CLI、Docker / Compose 和公开品牌使用 `nexatutor` / `NexaTutor`。内部 Python namespace 与持久化兼容标识继续保留 `deeptutor`。
 
-P0、Partners、P3、P4、P5、P6、P7 与 P8 已完成。Partner / IM、MCP、CLI Apps、在线 Skill Hub、账号 Auth / Admin / JWT / Cookie / Grants / Multi-user、PocketBase、公网部署、Book、Videogen、Math Animator / Manim、GeoGebra、Cron、Built-in GitHub / Brainstorm / Reason / Exec，以及非标准 RAG 和非目标 LLM Provider 的注册、调用、UI、后端实现和专属依赖均已删除，旧配置不能重新启用专用 Adapter。知识库只保留 LlamaIndex → FAISS + BM25 Hybrid → Citation 标准路径。LLM 产品入口只保留 OpenAI、Anthropic、Gemini、DeepSeek、OpenAI-compatible、Anthropic-compatible；OpenAI Codex OAuth 是独立 Core 登录能力，继续保留。Embedding、Search 与本地 Subagent Provider 是独立 Registry，不随 LLM 同名项删除。普通 Settings 响应不返回 Provider 明文 API Key，密钥使用 write-only 三态更新。运行边界已收敛为 `LocalUserContext → LocalWorkspace → data/user`，服务和容器端口只绑定 loopback；My Agents / Subagents 与 Sandbox Runner 明确保留。下一步从 P9 Memory UI 精简开始。
+P0、Partners、P3、P4、P5、P6、P7 与 P8 已完成。Partner / IM、MCP、CLI Apps、在线 Skill Hub、账号 Auth / Admin / JWT / Cookie / Grants / Multi-user、PocketBase、公网部署、Book、Videogen、Math Animator / Manim、GeoGebra、Cron、Built-in GitHub / Brainstorm / Reason / Exec，以及非标准 RAG 和非目标 LLM Provider 的注册、调用、UI、后端实现和专属依赖均已删除，旧配置不能重新启用专用 Adapter。知识库只保留 LlamaIndex → FAISS + BM25 Hybrid → Citation 标准路径。LLM 产品入口只保留 OpenAI、Anthropic、Gemini、DeepSeek、OpenAI-compatible、Anthropic-compatible；OpenAI Codex OAuth 是独立 Core 登录能力，继续保留。Embedding、Search 与本地 Subagent Provider 是独立 Registry，不随 LLM 同名项删除。普通 Settings 响应不返回 Provider 明文 API Key，密钥使用 write-only 三态更新。运行边界已收敛为 `LocalUserContext → LocalWorkspace → data/user`，服务和容器端口只绑定 loopback；My Agents / Subagents 与 Sandbox Runner 明确保留。
 
 P9/P10、P11 与 P12 第一层已完成。Python 顶级 namespace 改名延后单独决策；不得机械替换内部 import 或自动迁移用户数据、浏览器持久化键。
+
+Memory L1 / L2 / L3 三层视图及手动触发能力属于 Core，必须有可发现的前端入口。L1 保留按 Surface 手动 Refresh；L2 / L3 保留逐文档 Update / Audit / Dedup 入口及必要运行状态。Graph、Budget、Chunking、Reference 和内部调度细节可默认隐藏。当前后端和 `MemoryRunPanel` 仍在，下一小目标是补齐 L2 / L3 工作台入口并增加正向契约测试。
 
 所有施工以 `NEXATUTOR_SLIMMING_PLAN_REVISED新版.md` 为唯一执行基准。
 
