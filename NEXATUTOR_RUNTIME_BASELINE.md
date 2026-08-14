@@ -1,6 +1,8 @@
 # NexaTutor 运行时基线
 
-本文冻结提交 `8865da7c6d51d579db66ad123fcf3f16a2eed0a4` 开始裁剪时的运行时表面，用于为“取消注册 → 取消调用 → 删除 UI → 删除实现 → 删除依赖”提供对照证据。这里记录的是裁剪前事实，不是最终目标。
+本文冻结提交 `8865da7c6d51d579db66ad123fcf3f16a2eed0a4` 开始裁剪时的运行时表面，用于为“取消注册 → 取消调用 → 删除 UI → 删除实现 → 删除依赖”提供对照证据。这里全部是历史事实，不是当前运行时清单，也不是最终目标。
+
+当前运行时请以 `README.md`、`NEXATUTOR_HANDOFF.md` 和代码 Registry 为准。特别是当前 Capability 为 6 个，Partner / Auth / PocketBase / 非标准 RAG / 非目标 Provider 已完成删除。
 
 ## Registry 快照
 
@@ -66,19 +68,19 @@ ovms, nvidia_nim, groq, qianfan
 
 这些数字只用于对比，不代表可以立即删除依赖。只有运行时、测试、构建、CLI、动态 import 和 optional extra 引用全部消失后，才能删除对应包。
 
-## 首个 Partner / IM 施工边界
+## 历史施工边界（已完成）
 
 已经确认的最小目标是 `deeptutor/api/main.py` 中 Partner 生命周期钩子：启动时曾调用 `auto_start_partners()`，关闭时曾调用 `stop_all(preserve_auto_start=True)`。
 
-这两个调用已移除，并有 `tests/api/test_main_partner_lifecycle.py` 防回归测试。随后主应用的 Partner API Router 注册也已移除，并由 `tests/api/test_main_partner_router_registration.py` 证明 `/api/v1/partners` 不存在而 `/api/v1/subagents/partners` 暂时保留。Partner Router 实现、CLI、Tools、Plugin 转发、Subagent 旁路、UI、依赖、Memory 迁移和用户数据尚未删除。
+这两个调用已移除，并有 `tests/api/test_main_partner_lifecycle.py` 防回归测试。随后主应用的 Partner API Router、CLI、Tools、Subagent backend、Plugin 转发、UI、实现和专属依赖均已完成删除；`/api/v1/partners` 与 `/api/v1/subagents/partners` 均不属于当前 API。历史用户数据未自动删除。
 
-后续取消注册继续拆成独立小步：
+历史上曾拆成以下独立小步：
 
 1. Partner API Router（已完成）。
 2. Partner CLI Group（已完成）。
 3. 三个 Partner Built-in Tool（已完成；Registry 从基线 43 减为 40）。
-4. Partner Subagent Backend（下一步）。
-5. 在确认共享所有权后处理 Partner 旁路和 Plugin 转发。
+4. Partner Subagent Backend（已完成）。
+5. Partner 旁路和 Plugin 转发（已完成）。
 
 ## 基线验证
 

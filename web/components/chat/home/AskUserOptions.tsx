@@ -418,7 +418,7 @@ export const AskUserOptions = memo(function AskUserOptions({
   onSubmit: (payload: {
     text?: string;
     answers?: Array<{ questionId: string; text: string }>;
-  }) => void;
+  }) => boolean | Promise<boolean>;
   /** When true, the resolved Q&A card renders with an inline toggle so
    * the user can hide / show the question + answer summary. Resolved cards
    * default to collapsible+collapsed (the Q&A history stays addressable
@@ -452,7 +452,7 @@ const InteractiveAskUserCard = memo(function InteractiveAskUserCard({
   onSubmit: (payload: {
     text?: string;
     answers?: Array<{ questionId: string; text: string }>;
-  }) => void;
+  }) => boolean | Promise<boolean>;
 }) {
   const { t } = useTranslation();
   const totalQuestions = payload.questions.length;
@@ -471,6 +471,8 @@ const InteractiveAskUserCard = memo(function InteractiveAskUserCard({
   );
   const [activeIdx, setActiveIdx] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(false);
 
   const activeQuestion = payload.questions[activeIdx] ?? payload.questions[0];
 
@@ -503,8 +505,8 @@ const InteractiveAskUserCard = memo(function InteractiveAskUserCard({
   );
 
   const handleSubmit = useCallback(() => {
-    if (submitted) return;
-    setSubmitted(true);
+    if (submitted || submitting) return;
+    setSubmitError(false);
     const list: Array<{ questionId: string; text: string }> =
       payload.questions.map((q) => ({
         questionId: q.id,
@@ -516,8 +518,14 @@ const InteractiveAskUserCard = memo(function InteractiveAskUserCard({
       .map(({ text }) => text || "(skipped)")
       .filter((s) => s !== "(skipped)")
       .join(" | ");
-    onSubmit({ text: flat, answers: list });
-  }, [submitted, payload.questions, answers, onSubmit]);
+    setSubmitting(true);
+    Promise.resolve(onSubmit({ text: flat, answers: list }))
+      .then((accepted) => {
+        if (accepted) setSubmitted(true);
+        else setSubmitError(true);
+      })
+      .finally(() => setSubmitting(false));
+  }, [submitted, submitting, payload.questions, answers, onSubmit]);
 
   const pickOption = useCallback(
     (question: AskUserQuestion, label: string) => {
@@ -577,8 +585,10 @@ const InteractiveAskUserCard = memo(function InteractiveAskUserCard({
             {payload.intro || t("Please answer to continue.")}
           </div>
           <div className="mt-0.5 text-[11px] text-[var(--muted-foreground)]">
-            {submitted
+            {submitting
               ? t("Sending your answers…")
+              : submitError
+                ? t("This question is no longer active. Please start a new quiz.")
               : totalQuestions > 1
                 ? t("{{count}} questions — tap a tab to switch.", {
                     count: totalQuestions,
@@ -598,7 +608,7 @@ const InteractiveAskUserCard = memo(function InteractiveAskUserCard({
                 key={q.id}
                 type="button"
                 onClick={() => setActiveIdx(idx)}
-                disabled={submitted}
+                disabled={submitted || submitting}
                 className={
                   "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-medium transition-all " +
                   (isActive
@@ -644,7 +654,7 @@ const InteractiveAskUserCard = memo(function InteractiveAskUserCard({
             <button
               type="button"
               onClick={() => setActiveIdx((idx) => Math.max(0, idx - 1))}
-              disabled={submitted}
+              disabled={submitted || submitting}
               className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] bg-transparent px-2.5 py-1.5 text-[12px] font-medium text-[var(--foreground)] transition-colors hover:border-[var(--foreground)]/30 hover:bg-[color-mix(in_srgb,var(--foreground)_4%,transparent)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               <ChevronLeft size={14} strokeWidth={2} />
@@ -664,7 +674,7 @@ const InteractiveAskUserCard = memo(function InteractiveAskUserCard({
             onClick={() =>
               setActiveIdx((idx) => Math.min(totalQuestions - 1, idx + 1))
             }
-            disabled={submitted}
+            disabled={submitted || submitting}
             className="inline-flex items-center gap-1 rounded-md bg-[var(--primary)] px-3 py-1.5 text-[12px] font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span>{t("Next question")}</span>
@@ -674,7 +684,7 @@ const InteractiveAskUserCard = memo(function InteractiveAskUserCard({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitted}
+            disabled={submitted || submitting}
             className="rounded-md bg-[var(--primary)] px-3 py-1.5 text-[12px] font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {totalQuestions > 1 ? t("Submit answers") : t("Submit")}

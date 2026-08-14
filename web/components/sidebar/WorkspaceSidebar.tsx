@@ -6,9 +6,20 @@ import { useTranslation } from "react-i18next";
 import { SidebarShell } from "@/components/sidebar/SidebarShell";
 import { useUnifiedChat } from "@/context/UnifiedChatContext";
 import {
+  archiveSessionFolder,
+  createSessionFolder,
+  deleteSessionFolder,
   deleteSession,
+  listSessionFolders,
   listSessions,
+  moveSessionsToFolder,
+  pinSessionFolder,
+  renameSessionFolder,
+  restoreSessionFolder,
+  setSessionFolder,
+  unpinSessionFolder,
   updateSessionTitle,
+  type SessionFolder,
   type SessionSummary,
 } from "@/lib/session-api";
 
@@ -23,6 +34,7 @@ export default function WorkspaceSidebar() {
     sidebarRefreshToken,
   } = useUnifiedChat();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [folders, setFolders] = useState<SessionFolder[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const hasLoadedSessionsRef = useRef(false);
 
@@ -32,6 +44,7 @@ export default function WorkspaceSidebar() {
     }
     try {
       setSessions(await listSessions(50, 0, { force: true }));
+      setFolders(await listSessionFolders({ force: true }));
       hasLoadedSessionsRef.current = true;
     } catch (error) {
       console.error("Failed to load sessions", error);
@@ -120,16 +133,169 @@ export default function WorkspaceSidebar() {
     [cancelStreamingTurn, newSession, router, selectedSessionId, t],
   );
 
+  // ── Session folder management ────────────────────────────────────
+
+  const refreshFolders = useCallback(async () => {
+    try {
+      setFolders(await listSessionFolders({ force: true }));
+    } catch (error) {
+      console.error("Failed to load session folders", error);
+    }
+  }, []);
+
+  const handleCreateFolder = useCallback(
+    async (name: string) => {
+      await createSessionFolder(name);
+      await refreshFolders();
+      await refreshSessions();
+    },
+    [refreshFolders, refreshSessions],
+  );
+
+  const handleRenameFolder = useCallback(
+    async (folderId: string, name: string) => {
+      const renamed = await renameSessionFolder(folderId, name);
+      setFolders((prev) =>
+        prev.map((folder) => (folder.id === folderId ? renamed : folder)),
+      );
+    },
+    [],
+  );
+
+  const handleArchiveFolder = useCallback(
+    async (folderId: string) => {
+      await archiveSessionFolder(folderId);
+      await refreshFolders();
+    },
+    [refreshFolders],
+  );
+
+  const handleRestoreFolder = useCallback(
+    async (folderId: string) => {
+      await restoreSessionFolder(folderId);
+      await refreshFolders();
+    },
+    [refreshFolders],
+  );
+
+  const handlePinFolder = useCallback(
+    async (folderId: string) => {
+      const folder = folders.find((item) => item.id === folderId);
+      const updated = folder?.pinned
+        ? await unpinSessionFolder(folderId)
+        : await pinSessionFolder(folderId);
+      setFolders((prev) =>
+        prev.map((item) => (item.id === folderId ? updated : item)),
+      );
+    },
+    [folders],
+  );
+
+  const handleDeleteFolder = useCallback(
+    async (folderId: string) => {
+      const folder = folders.find((item) => item.id === folderId);
+      const count = folder?.session_count ?? 0;
+      const message = count > 0
+        ? t("Delete folder with sessions", { count, name: folder?.name ?? "" })
+        : t("Delete folder", { name: folder?.name ?? "" });
+      if (!window.confirm(message)) return;
+      const result = await deleteSessionFolder(folderId, true);
+      if (result.deleted_sessions.length > 0) {
+        setSessions((prev) =>
+          prev.filter(
+            (session) => !result.deleted_sessions.includes(session.session_id),
+          ),
+        );
+      }
+      await refreshFolders();
+    },
+    [folders, refreshFolders, t],
+  );
+
+  const handleMoveSession = useCallback(
+    async (sessionId: string, folderId: string) => {
+      const prevFolderId =
+        sessions.find((session) => session.session_id === sessionId)
+          ?.folder_id ?? "";
+      const updated = await setSessionFolder(sessionId, folderId);
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.session_id === sessionId
+            ? { ...session, folder_id: updated.folder_id ?? "" }
+            : session,
+        ),
+      );
+      if (prevFolderId !== folderId) {
+        setFolders((prev) =>
+          prev.map((folder) => {
+            let count = folder.session_count;
+            if (folder.id === prevFolderId) {
+              count = Math.max(0, count - 1);
+            }
+            if (folder.id === folderId) {
+              count += 1;
+            }
+            return { ...folder, session_count: count };
+          }),
+        );
+      }
+    },
+    [sessions],
+  );
+
+  const handleBatchMove = useCallback(
+    async (sessionIds: string[], folderId: string) => {
+      if (sessionIds.length === 0) return;
+      await moveSessionsToFolder(folderId, sessionIds);
+      const ids = new Set(sessionIds);
+      setSessions((prev) =>
+        prev.map((session) =>
+          ids.has(session.session_id)
+            ? { ...session, folder_id: folderId }
+            : session,
+        ),
+      );
+      // Re-count folders: subtract each moved session from its previous
+      // folder, add the whole batch to the destination.
+      const deltas = new Map<string, number>();
+      for (const session of sessions) {
+        if (!ids.has(session.session_id)) continue;
+        const prevId = session.folder_id ?? "";
+        deltas.set(prevId, (deltas.get(prevId) ?? 0) - 1);
+      }
+      deltas.set(folderId, (deltas.get(folderId) ?? 0) + sessionIds.length);
+      setFolders((prev) =>
+        prev.map((folder) => ({
+          ...folder,
+          session_count: Math.max(
+            0,
+            folder.session_count + (deltas.get(folder.id) ?? 0),
+          ),
+        })),
+      );
+    },
+    [sessions],
+  );
+
   return (
     <SidebarShell
       showSessions
       sessions={orderedSessions}
+      folders={folders}
       activeSessionId={selectedSessionId}
       loadingSessions={loadingSessions}
       onNewChat={handleNewChat}
       onSelectSession={handleSelectSession}
       onRenameSession={handleRenameSession}
       onDeleteSession={handleDeleteSession}
+      onCreateFolder={handleCreateFolder}
+      onRenameFolder={handleRenameFolder}
+      onArchiveFolder={handleArchiveFolder}
+      onRestoreFolder={handleRestoreFolder}
+      onDeleteFolder={handleDeleteFolder}
+      onPinFolder={handlePinFolder}
+      onMoveSession={handleMoveSession}
+      onBatchMove={handleBatchMove}
     />
   );
 }

@@ -2,9 +2,9 @@
 
 - 来源项目：`HKUDS/DeepTutor`
 - 本地基线提交：`8865da7c6d51d579db66ad123fcf3f16a2eed0a4`
-- 基线标签：等待基线文件审核并提交后创建
+- 基线标签：未记录；以固定提交哈希为准
 - 基线日期：`2026-08-12`
-- 当前分支：`main`
+- 基线分支：`main`
 - 建立基线前存在本地修改：是
 - 上游远程地址：`https://github.com/HKUDS/DeepTutor.git`
 

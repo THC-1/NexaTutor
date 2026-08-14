@@ -6,12 +6,14 @@ NexaTutor 是面向个人用户的本地 AI 学习工作台。应用前后端运
 
 ## 当前进度
 
-截至 2026-08-12：
+截至 2026-08-13：
 
 - 前端页面标题、侧栏、登录注册、状态文案和中英文界面文案已统一为 NexaTutor。
 - Partners / IM 已完整裁剪：Router、CLI、Tools、Partner Subagent backend、调用点、UI、实现、依赖与正向测试均已删除。
 - MCP、CLI Apps、Deferred Tools / `load_tools`、在线 Skill Hub 与 Plugin Management UI / API / CLI 已完整裁剪，旧配置不能重新激活。
 - My Agents / Subagents 明确保留，后续只收敛到单用户、本地边界。
+- Auth / Admin / Multi-user / Grants、PocketBase、公网部署、Book、Videogen、Math Animator / Manim、GeoGebra、Cron、高权限工具、非标准 RAG 和非目标 LLM Provider 均已完成裁剪。
+- Memory L1 / L2 / L3 的导航、工作台与手动 Refresh / Update / Audit / Dedup 入口已经恢复，属于后续改造必须保护的 Core。
 - Python 顶级包仍为 `deeptutor`；是否迁移为 `nexatutor` 留待独立决策。
 - `web/.next-deeptutor/` 已停止 Git 跟踪并被忽略，本地残留生成物不得重新混入源码提交。
 
@@ -46,12 +48,9 @@ NexaTutor 的核心链路是：
 - MCP、CLI Apps、在线 Skill 市场与插件管理 UI。
 - PocketBase 外部 Sidecar 与复杂公网部署配置。
 
-以下能力仍在按批次移除，当前不能仅凭本表判断代码已经删除：
+当前内置 Capability 共 6 个：`chat`、`deep_solve`、`deep_question`、`deep_research`、`visualize`、`mastery_path`。裁剪前基线中的 `math_animator` 已删除。
 
-- Auth / Admin / Multi-user / Grants。
-- Book、视频、Manim、GeoGebra、Cron、GitHub Tool 与通用 Exec。
-- GraphRAG、LightRAG、PageIndex、Tencent IMA 等非标准 RAG 路径。
-- 本地模型入口与非目标专用 OAuth Provider。
+裁剪阶段已经结束。后续进入改造阶段时，不得依据历史计划恢复已删除功能；新增或重构应围绕上述产品边界，并持续保护本地数据兼容、Memory、My Agents / Subagents、Codex OAuth、Sandbox Runner 和标准知识库路径。
 
 ## 环境要求
 
@@ -60,7 +59,7 @@ NexaTutor 的核心链路是：
 - npm
 - Windows 开发建议使用 PowerShell 7
 
-大型或平台相关的可选依赖不会成为 NexaTutor 最终默认安装要求。当前依赖仍处于迁移期，请以 `pyproject.toml` 和 `web/package.json` 为准。
+大型或平台相关的可选依赖不会成为 NexaTutor 默认安装要求。依赖边界已完成第一轮清洗；安装和构建事实仍以 `pyproject.toml`、`requirements/` 和 `web/package.json` 为准。
 
 ## 从源码运行
 
@@ -132,7 +131,7 @@ nexatutor config
 nexatutor skill
 ```
 
-`partner`、`plugin` 与 `book` 已不存在；`skill` / `skills` 仅保留本地 `list`、`remove`。迁移期仍可能显示 `provider` 等待裁剪命令，文档不将这些入口描述为 NexaTutor Core。
+`partner`、`plugin` 与 `book` 已不存在；`skill` / `skills` 仅保留本地 `list`、`remove`。`provider` 仅保留 OpenAI Codex OAuth 登录，不是通用 Provider 管理入口。
 
 常用示例：
 

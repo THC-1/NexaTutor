@@ -23,7 +23,7 @@ import SessionList from "@/components/SessionList";
 import { useSidebarDrawer } from "@/components/layout/AppShell";
 import { useDevice } from "@/hooks/useDevice";
 import { VersionBadge } from "@/components/sidebar/VersionBadge";
-import type { SessionSummary } from "@/lib/session-api";
+import type { SessionFolder, SessionSummary } from "@/lib/session-api";
 import { Tooltip } from "@/components/ui/Tooltip";
 
 interface NavEntry {
@@ -73,6 +73,7 @@ const RECENTS_COLLAPSED_KEY = "deeptutor.sidebar.recentsCollapsed";
 
 interface SidebarShellProps {
   sessions?: SessionSummary[];
+  folders?: SessionFolder[];
   activeSessionId?: string | null;
   loadingSessions?: boolean;
   showSessions?: boolean;
@@ -81,6 +82,17 @@ interface SidebarShellProps {
   onSelectSession?: (sessionId: string) => void | Promise<void>;
   onRenameSession?: (sessionId: string, title: string) => void | Promise<void>;
   onDeleteSession?: (sessionId: string) => void | Promise<void>;
+  onCreateFolder?: (name: string) => void | Promise<void>;
+  onRenameFolder?: (folderId: string, name: string) => void | Promise<void>;
+  onArchiveFolder?: (folderId: string) => void | Promise<void>;
+  onRestoreFolder?: (folderId: string) => void | Promise<void>;
+  onDeleteFolder?: (folderId: string) => void | Promise<void>;
+  onPinFolder?: (folderId: string) => void | Promise<void>;
+  onMoveSession?: (sessionId: string, folderId: string) => void | Promise<void>;
+  onBatchMove?: (
+    sessionIds: string[],
+    folderId: string,
+  ) => void | Promise<void>;
   /**
    * Footer content rendered below the nav. Pass a render function to receive
    * the current ``collapsed`` state so footer items (e.g. Admin / Sign out) can
@@ -91,6 +103,7 @@ interface SidebarShellProps {
 
 export function SidebarShell({
   sessions = [],
+  folders,
   activeSessionId = null,
   loadingSessions = false,
   showSessions = false,
@@ -98,6 +111,14 @@ export function SidebarShell({
   onSelectSession,
   onRenameSession,
   onDeleteSession,
+  onCreateFolder,
+  onRenameFolder,
+  onArchiveFolder,
+  onRestoreFolder,
+  onDeleteFolder,
+  onPinFolder,
+  onMoveSession,
+  onBatchMove,
   footerSlot,
 }: SidebarShellProps) {
   const pathname = usePathname();
@@ -329,6 +350,7 @@ export function SidebarShell({
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2 pt-0.5">
               <SessionList
                 sessions={sessions}
+                folders={folders}
                 activeSessionId={activeSessionId}
                 loading={loadingSessions}
                 onSelect={(sessionId) => {
@@ -337,6 +359,14 @@ export function SidebarShell({
                 }}
                 onRename={onRenameSession}
                 onDelete={onDeleteSession}
+                onCreateFolder={onCreateFolder}
+                onRenameFolder={onRenameFolder}
+                onArchiveFolder={onArchiveFolder}
+                onRestoreFolder={onRestoreFolder}
+                onDeleteFolder={onDeleteFolder}
+                onPinFolder={onPinFolder}
+                onMoveSession={onMoveSession}
+                onBatchMove={onBatchMove}
                 compact
               />
             </div>

@@ -1,6 +1,6 @@
 # NexaTutor 贡献指南
 
-NexaTutor 正在从 DeepTutor 渐进裁剪为单用户、本地优先的 AI 学习工作台。当前阶段最重要的不是快速增加功能，而是让每一次改动都有明确边界、证据和回滚点。
+NexaTutor 已完成从 DeepTutor 到单用户、本地优先 AI 学习工作台的第一轮裁剪，当前进入改造阶段。每一次改动都必须有明确边界、证据和回滚点；不得把已删除的大项目能力带回 Core。
 
 ## 贡献范围
 
@@ -11,6 +11,7 @@ NexaTutor 正在从 DeepTutor 渐进裁剪为单用户、本地优先的 AI 学�
 - Notebook、Question Bank、Memory、会话和本地数据恢复修复。
 - API Key 脱敏、路径边界、上传安全和 Code Execution 风险收敛。
 - 按正式计划执行的单功能域裁剪。
+- Core 能力的体验、可靠性、可观测性和本地数据兼容改造。
 - 简体中文文档与可重复 Smoke / E2E。
 
 暂不接受：
@@ -19,6 +20,7 @@ NexaTutor 正在从 DeepTutor 渐进裁剪为单用户、本地优先的 AI 学�
 - 新的复杂 RAG Engine、本地模型专用入口或高维护 Provider。
 - 与当前批次无关的大规模重构。
 - 将多个功能域、机械改名和依赖升级混在一个提交中。
+- 恢复已删除的 Partner、MCP、Auth / Multi-user、非标准 RAG 或专用 Provider 能力。
 
 ## 开始前
 
@@ -30,7 +32,7 @@ NexaTutor 正在从 DeepTutor 渐进裁剪为单用户、本地优先的 AI 学�
 
 ## 裁剪功能的固定顺序
 
-每个 Remove 功能域必须按以下顺序执行：
+若明确启动新的 Remove 功能域，必须按以下顺序执行：
 
 ```text
 1. 取消注册

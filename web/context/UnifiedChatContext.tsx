@@ -816,7 +816,7 @@ interface ChatContextValue {
           text?: string;
           answers?: Array<{ questionId: string; text: string }>;
         },
-  ) => void;
+  ) => Promise<boolean>;
   regenerateLastMessage: () => void;
   deleteTurn: (messageId: number) => Promise<void>;
   /** Re-send a user message under a new branch (sibling of the original).
@@ -999,6 +999,9 @@ export function UnifiedChatProvider({
   // assistant message if the server rejects the request (e.g. ``regenerate_busy``
   // or ``nothing_to_regenerate``). Keyed by session entry key.
   const pendingRegenerateRef = useRef<Map<string, MessageItem>>(new Map());
+  const pendingReplyAckRef = useRef<Map<string, (accepted: boolean) => void>>(
+    new Map(),
+  );
   // Forward-declared so ``handleRunnerEvent`` (created above
   // ``loadSession`` in source order) can trigger a server refresh after
   // a turn finishes without taking a stale closure of ``loadSession``.
@@ -1071,6 +1074,17 @@ export function UnifiedChatProvider({
     (runnerKey: string, event: StreamEvent) => {
       const runner = runnersRef.current.get(runnerKey);
       const effectiveKey = runner?.key || runnerKey;
+      if (event.type === "user_reply_ack") {
+        const resolve = pendingReplyAckRef.current.get(event.turn_id || "");
+        if (resolve) {
+          pendingReplyAckRef.current.delete(event.turn_id || "");
+          resolve(
+            (event.metadata as { accepted?: boolean } | undefined)?.accepted ===
+              true,
+          );
+        }
+        return;
+      }
       if (event.type === "session") {
         const sessionId =
           (event.metadata as { session_id?: string } | undefined)?.session_id ||
@@ -1677,10 +1691,10 @@ export function UnifiedChatProvider({
             text?: string;
             answers?: Array<{ questionId: string; text: string }>;
           },
-    ) => {
+    ): Promise<boolean> => {
       const currentState = stateRef.current;
       const key = currentState.selectedKey;
-      if (!key) return;
+      if (!key) return Promise.resolve(false);
       const session = currentState.sessions[key];
       const turnId = session?.activeTurnId;
       const pendingAskUser = session
@@ -1690,7 +1704,7 @@ export function UnifiedChatProvider({
       // silent long enough for the socket to reconnect, so allow submission
       // whenever the unresolved card and active turn id are still present.
       if (!session || !turnId || (!session.isStreaming && !pendingAskUser)) {
-        return;
+        return Promise.resolve(false);
       }
       const message: import("@/lib/unified-ws").SubmitUserReplyMessage = {
         type: "submit_user_reply",
@@ -1702,7 +1716,18 @@ export function UnifiedChatProvider({
         if (typeof reply.text === "string") message.text = reply.text;
         if (Array.isArray(reply.answers)) message.answers = reply.answers;
       }
+      const accepted = new Promise<boolean>((resolve) => {
+        const timer = window.setTimeout(() => {
+          pendingReplyAckRef.current.delete(turnId);
+          resolve(false);
+        }, 10000);
+        pendingReplyAckRef.current.set(turnId, (value) => {
+          window.clearTimeout(timer);
+          resolve(value);
+        });
+      });
       sendThroughRunner(key, message);
+      return accepted;
     },
     [sendThroughRunner],
   );

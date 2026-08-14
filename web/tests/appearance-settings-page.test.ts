@@ -5,6 +5,10 @@ import path from "node:path";
 
 import { CODE_BLOCK_THEME_OPTIONS } from "../components/common/code-block-themes";
 
+const zhApp = JSON.parse(
+  fs.readFileSync(path.join(process.cwd(), "locales", "zh", "app.json"), "utf8"),
+) as Record<string, string>;
+
 const appearancePagePath = path.join(
   process.cwd(),
   "app",
@@ -84,4 +88,28 @@ test("appearance settings page: preview includes a line long enough to demonstra
     previewSource.split("\n").some((line) => line.length >= 120),
     "The preview needs a 120+ character line so Wrap long lines has a visible effect",
   );
+});
+
+test("appearance settings page: code block controls have concise Chinese copy", () => {
+  const expectedTranslations = {
+    "Code blocks": "代码显示",
+    "Choose how code snippets look across the app. Changes apply immediately to saved and streamed responses.":
+      "设置应用内代码片段的显示方式，修改后立即生效。",
+    Preview: "效果预览",
+    "Updates live as you change the settings below.":
+      "调整下方设置时，预览会同步更新。",
+    "Syntax theme": "代码配色",
+    "Select the Prism theme used for highlighted code blocks.":
+      "选择代码高亮使用的配色方案。",
+    "Show line numbers": "显示行号",
+    "Display a gutter with line numbers beside each code block.":
+      "在每行代码左侧显示行号。",
+    "Wrap long lines": "长代码自动换行",
+    "Wrap long code lines instead of forcing horizontal scrolling.":
+      "代码超出宽度时自动换行，无需横向滚动。",
+  };
+
+  for (const [key, translation] of Object.entries(expectedTranslations)) {
+    assert.equal(zhApp[key], translation, `Missing Chinese copy for: ${key}`);
+  }
 });

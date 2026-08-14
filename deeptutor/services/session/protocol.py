@@ -71,6 +71,7 @@ class SessionStoreProtocol(Protocol):
         self,
         limit: int = 50,
         offset: int = 0,
+        folder_id: str | None = None,
     ) -> list[dict[str, Any]]: ...
 
     async def update_summary(self, session_id: str, summary: str, up_to_msg_id: int) -> bool: ...

@@ -242,13 +242,21 @@ async def unified_websocket(ws: WebSocket) -> None:
 
                 runtime = get_turn_runtime_manager()
                 accepted = await runtime.submit_user_reply(turn_id, text=text_str, answers=answers)
-                if not accepted:
-                    await safe_send(
-                        {
-                            "type": "error",
-                            "content": (f"Turn {turn_id} is not awaiting a user reply."),
-                        }
-                    )
+                await safe_send(
+                    {
+                        "type": "user_reply_ack",
+                        "source": "unified_ws",
+                        "stage": "",
+                        "content": "",
+                        "metadata": {
+                            "accepted": accepted,
+                            "reason": "" if accepted else "not_awaiting_reply",
+                        },
+                        "session_id": "",
+                        "turn_id": turn_id,
+                        "seq": 0,
+                    }
+                )
                 continue
 
             if msg_type == "regenerate":

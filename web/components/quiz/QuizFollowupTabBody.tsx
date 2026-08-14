@@ -270,7 +270,9 @@ export default function QuizFollowupTabBody({
                     message={message}
                     isStreaming={isStreamingThis}
                     onSubmitUserReply={(reply) =>
-                      controller.submitAskUserReply(context.questionKey, reply)
+                      Promise.resolve(
+                        controller.submitAskUserReply(context.questionKey, reply),
+                      ).then(() => true)
                     }
                   />
                 );
@@ -316,7 +318,7 @@ function AssistantThreadMessage({
   onSubmitUserReply: (reply: {
     text?: string;
     answers?: Array<{ questionId: string; text: string }>;
-  }) => void;
+  }) => boolean | Promise<boolean>;
 }) {
   const segments = useMemo(
     () => extractMessageSegments(message.events),
@@ -347,7 +349,7 @@ function AssistantThreadMessage({
             <AskUserOptions
               key={seg.key}
               data={seg.data}
-              onSubmit={onSubmitUserReply}
+              onSubmit={(reply) => onSubmitUserReply?.(reply) ?? false}
             />
           ),
         )

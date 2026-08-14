@@ -308,7 +308,7 @@ const AssistantMessage = memo(function AssistantMessage({
           text?: string;
           answers?: Array<{ questionId: string; text: string }>;
         },
-  ) => void;
+  ) => boolean | Promise<boolean>;
 }) {
   const events = useMemo(() => msg.events ?? [], [msg.events]);
   const resultEvent = useMemo(
@@ -414,8 +414,8 @@ const AssistantMessage = memo(function AssistantMessage({
             <AskUserOptions
               data={askUserPayload}
               onSubmit={(reply) => {
-                if (!onSubmitUserReply) return;
-                onSubmitUserReply(reply);
+                if (!onSubmitUserReply) return false;
+                return onSubmitUserReply(reply);
               }}
               collapsible={researchInProgress}
               defaultCollapsed={researchInProgress}
@@ -484,8 +484,8 @@ const AssistantMessage = memo(function AssistantMessage({
               key={seg.key}
               data={seg.data}
               onSubmit={(reply) => {
-                if (!onSubmitUserReply) return;
-                onSubmitUserReply(reply);
+                if (!onSubmitUserReply) return false;
+                return onSubmitUserReply(reply);
               }}
             />
           ),
@@ -501,8 +501,8 @@ const AssistantMessage = memo(function AssistantMessage({
         <AskUserOptions
           data={askUserPayload}
           onSubmit={(reply) => {
-            if (!onSubmitUserReply) return;
-            onSubmitUserReply(reply);
+            if (!onSubmitUserReply) return false;
+            return onSubmitUserReply(reply);
           }}
         />
       ) : null}
@@ -1164,7 +1164,7 @@ export const ChatMessageList = memo(function ChatMessageList({
           text?: string;
           answers?: Array<{ questionId: string; text: string }>;
         },
-  ) => void;
+  ) => boolean | Promise<boolean>;
 }) {
   const { t } = useTranslation();
   // Visible path: when no branching has happened the result is identical

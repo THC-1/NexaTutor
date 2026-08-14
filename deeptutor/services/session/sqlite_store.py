@@ -157,6 +157,21 @@ class SQLiteSessionStore:
                 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at
                     ON sessions(updated_at DESC);
 
+                -- User-created folders for organizing sessions. ``status`` is
+                -- 'active' or 'archived'; only archived folders may be deleted
+                -- (see delete_folder), and deleting one by default also deletes
+                -- its sessions. Sessions point at folders via sessions.folder_id
+                -- ('' = unassigned), so archiving/deleting a folder never moves
+                -- or destroys session rows by itself.
+                CREATE TABLE IF NOT EXISTS session_folders (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    pinned INTEGER NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS turns (
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -235,6 +250,21 @@ class SQLiteSessionStore:
             columns = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
             if "preferences_json" not in columns:
                 conn.execute("ALTER TABLE sessions ADD COLUMN preferences_json TEXT DEFAULT '{}'")
+            if "folder_id" not in columns:
+                # Session folders: '' (default) = unassigned. Always added,
+                # never dropped — the column is part of the Core session model.
+                conn.execute("ALTER TABLE sessions ADD COLUMN folder_id TEXT DEFAULT ''")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_folder ON sessions(folder_id)"
+            )
+            folder_columns = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(session_folders)").fetchall()
+            }
+            if folder_columns and "pinned" not in folder_columns:
+                conn.execute(
+                    "ALTER TABLE session_folders ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"
+                )
             if "kind" in columns:
                 try:
                     conn.execute("ALTER TABLE sessions DROP COLUMN kind")
@@ -465,6 +495,7 @@ class SQLiteSessionStore:
                     s.compressed_summary,
                     s.summary_up_to_msg_id,
                     s.preferences_json,
+                    s.folder_id,
                     COALESCE(
                         (
                             SELECT t.status
@@ -825,6 +856,240 @@ class SQLiteSessionStore:
 
     async def delete_session(self, session_id: str) -> bool:
         return await self._run(self._delete_session_sync, session_id)
+
+    # ------------------------------------------------------------------
+    # Session folders
+    # ------------------------------------------------------------------
+
+    _FOLDER_SELECT = """
+        SELECT
+            f.id,
+            f.name,
+            f.status,
+            f.pinned,
+            f.created_at,
+            f.updated_at,
+            (SELECT COUNT(*) FROM sessions s WHERE s.folder_id = f.id) AS session_count
+        FROM session_folders f
+    """
+
+    @staticmethod
+    def _folder_payload(row: sqlite3.Row) -> dict[str, Any]:
+        payload = dict(row)
+        payload["folder_id"] = payload["id"]
+        return payload
+
+    def _get_folder_sync(self, folder_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                self._FOLDER_SELECT + " WHERE f.id = ?", (folder_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return self._folder_payload(row)
+
+    async def get_folder(self, folder_id: str) -> dict[str, Any] | None:
+        return await self._run(self._get_folder_sync, folder_id)
+
+    def _create_folder_sync(self, name: str) -> dict[str, Any]:
+        now = time.time()
+        folder_id = f"folder_{int(now * 1000)}_{uuid.uuid4().hex[:8]}"
+        safe_name = (name or "").strip()[:60] or "Untitled folder"
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO session_folders (id, name, status, created_at, updated_at)
+                VALUES (?, ?, 'active', ?, ?)
+                """,
+                (folder_id, safe_name, now, now),
+            )
+            conn.commit()
+        return {
+            "id": folder_id,
+            "folder_id": folder_id,
+            "name": safe_name,
+            "status": "active",
+            "pinned": 0,
+            "created_at": now,
+            "updated_at": now,
+            "session_count": 0,
+        }
+
+    async def create_folder(self, name: str) -> dict[str, Any]:
+        return await self._run(self._create_folder_sync, name)
+
+    def _list_folders_sync(self, status: str | None = None) -> list[dict[str, Any]]:
+        where = " WHERE f.status = ?" if status else ""
+        params: tuple[Any, ...] = (status,) if status else ()
+        with self._connect() as conn:
+            rows = conn.execute(
+                # Pinned folders stay at the top of the active list; within
+                # each tier the original creation order is preserved.
+                self._FOLDER_SELECT
+                + where
+                + " ORDER BY f.pinned DESC, f.created_at ASC",
+                params,
+            ).fetchall()
+        return [self._folder_payload(row) for row in rows]
+
+    async def list_folders(self, status: str | None = None) -> list[dict[str, Any]]:
+        return await self._run(self._list_folders_sync, status)
+
+    def _rename_folder_sync(self, folder_id: str, name: str) -> dict[str, Any] | None:
+        safe_name = (name or "").strip()[:60]
+        if not safe_name:
+            return None
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE session_folders SET name = ?, updated_at = ? WHERE id = ?",
+                (safe_name, time.time(), folder_id),
+            )
+            if cur.rowcount == 0:
+                return None
+            row = conn.execute(
+                self._FOLDER_SELECT + " WHERE f.id = ?", (folder_id,)
+            ).fetchone()
+        return self._folder_payload(row)
+
+    async def rename_folder(self, folder_id: str, name: str) -> dict[str, Any] | None:
+        return await self._run(self._rename_folder_sync, folder_id, name)
+
+    def _set_folder_status_sync(self, folder_id: str, status: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE session_folders SET status = ?, updated_at = ? WHERE id = ?",
+                (status, time.time(), folder_id),
+            )
+            conn.commit()
+        return cur.rowcount > 0
+
+    async def archive_folder(self, folder_id: str) -> bool:
+        """Archive a folder: it disappears from the active list (its sessions
+        stay assigned to it) and becomes deletable via ``delete_folder``."""
+        return await self._run(self._set_folder_status_sync, folder_id, "archived")
+
+    async def restore_folder(self, folder_id: str) -> bool:
+        """Restore an archived folder (and its sessions) to the active list."""
+        return await self._run(self._set_folder_status_sync, folder_id, "active")
+
+    def _set_folder_pinned_sync(self, folder_id: str, pinned: bool) -> bool:
+        """Pin or unpin a folder. Pinned folders sort first in the active list.
+
+        Only ``active`` folders can be pinned — archiving a pinned folder
+        keeps the flag (so restoring brings it back to the top), but pinning
+        is rejected while the folder is archived.
+        """
+        with self._connect() as conn:
+            folder = conn.execute(
+                "SELECT id, status FROM session_folders WHERE id = ?", (folder_id,)
+            ).fetchone()
+            if folder is None:
+                return False
+            if folder["status"] != "active":
+                raise ValueError("Only active folders can be pinned")
+            conn.execute(
+                "UPDATE session_folders SET pinned = ?, updated_at = ? WHERE id = ?",
+                (1 if pinned else 0, time.time(), folder_id),
+            )
+            conn.commit()
+        return True
+
+    async def set_folder_pinned(self, folder_id: str, pinned: bool) -> bool:
+        return await self._run(self._set_folder_pinned_sync, folder_id, pinned)
+
+    def _delete_folder_sync(
+        self, folder_id: str, delete_sessions: bool = True
+    ) -> dict[str, Any]:
+        """Delete an archived folder.
+
+        Only ``archived`` folders may be deleted. With ``delete_sessions``
+        (default) the folder's sessions are deleted too (messages/turns
+        cascade via FK); otherwise they are released back to unassigned.
+        Returns ``{"deleted": bool, "deleted_sessions": [session_id, ...]}``.
+        """
+        with self._connect() as conn:
+            folder = conn.execute(
+                "SELECT id, status FROM session_folders WHERE id = ?", (folder_id,)
+            ).fetchone()
+            if folder is None:
+                return {"deleted": False, "deleted_sessions": []}
+            if folder["status"] != "archived":
+                raise ValueError("Only archived folders can be deleted")
+            rows = conn.execute(
+                "SELECT id FROM sessions WHERE folder_id = ?", (folder_id,)
+            ).fetchall()
+            session_ids = [row["id"] for row in rows]
+            if delete_sessions:
+                conn.execute("DELETE FROM sessions WHERE folder_id = ?", (folder_id,))
+            else:
+                conn.execute(
+                    "UPDATE sessions SET folder_id = '' WHERE folder_id = ?",
+                    (folder_id,),
+                )
+            conn.execute("DELETE FROM session_folders WHERE id = ?", (folder_id,))
+            conn.commit()
+        return {
+            "deleted": True,
+            "deleted_sessions": session_ids if delete_sessions else [],
+        }
+
+    async def delete_folder(
+        self, folder_id: str, delete_sessions: bool = True
+    ) -> dict[str, Any]:
+        return await self._run(self._delete_folder_sync, folder_id, delete_sessions)
+
+    def _set_session_folder_sync(self, session_id: str, folder_id: str) -> bool:
+        """Assign a session to a folder ('' = unassigned).
+
+        The target folder must exist and be ``active`` — sessions can never
+        be moved *into* an archived folder. Moving a session out of an
+        archived folder (to '' or an active folder) is how individual
+        sessions are recovered from the archive.
+        """
+        with self._connect() as conn:
+            session = conn.execute(
+                "SELECT id FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if session is None:
+                return False
+            if folder_id:
+                folder = conn.execute(
+                    "SELECT id FROM session_folders WHERE id = ? AND status = 'active'",
+                    (folder_id,),
+                ).fetchone()
+                if folder is None:
+                    raise ValueError(f"Folder not found or not active: {folder_id}")
+            conn.execute(
+                "UPDATE sessions SET folder_id = ?, updated_at = ? WHERE id = ?",
+                (folder_id, time.time(), session_id),
+            )
+            conn.commit()
+        return True
+
+    async def set_session_folder(self, session_id: str, folder_id: str) -> bool:
+        return await self._run(self._set_session_folder_sync, session_id, folder_id)
+
+    def _move_sessions_sync(self, folder_id: str, session_ids: list[str]) -> int:
+        """Batch-assign sessions to an active folder. Returns rows updated."""
+        if not session_ids:
+            return 0
+        with self._connect() as conn:
+            folder = conn.execute(
+                "SELECT id FROM session_folders WHERE id = ? AND status = 'active'",
+                (folder_id,),
+            ).fetchone()
+            if folder is None:
+                raise ValueError(f"Folder not found or not active: {folder_id}")
+            now = time.time()
+            cur = conn.executemany(
+                "UPDATE sessions SET folder_id = ?, updated_at = ? WHERE id = ?",
+                [(folder_id, now, session_id) for session_id in session_ids],
+            )
+            conn.commit()
+        return cur.rowcount
+
+    async def move_sessions(self, folder_id: str, session_ids: list[str]) -> int:
+        return await self._run(self._move_sessions_sync, folder_id, session_ids)
 
     def _add_message_sync(
         self,
@@ -1348,6 +1613,7 @@ class SQLiteSessionStore:
             s.compressed_summary,
             s.summary_up_to_msg_id,
             s.preferences_json,
+            s.folder_id,
             COUNT(m.id) AS message_count,
             COALESCE(
                 (SELECT t.status FROM turns t WHERE t.session_id = s.id
@@ -1384,12 +1650,12 @@ class SQLiteSessionStore:
     _WHERE_IMPORTED = r"WHERE s.id LIKE 'imported\_%' ESCAPE '\'"
 
     def _list_session_summaries_sync(
-        self, where_sql: str, limit: int, offset: int
+        self, where_sql: str, limit: int, offset: int, params: tuple[Any, ...] = ()
     ) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
                 self._SESSION_SUMMARY_SQL.format(where=where_sql),
-                (limit, offset),
+                (*params, limit, offset),
             ).fetchall()
         sessions = []
         for row in rows:
@@ -1403,10 +1669,18 @@ class SQLiteSessionStore:
         self,
         limit: int = 50,
         offset: int = 0,
+        folder_id: str | None = None,
     ) -> list[dict[str, Any]]:
         # Native chats only — imported histories surface under their own
-        # Space category, not the regular history list.
-        return self._list_session_summaries_sync(self._WHERE_NATIVE, limit, offset)
+        # Space category, not the regular history list. ``folder_id`` narrows
+        # to a single folder ('' = the unassigned bucket); None = no filter.
+        if folder_id is None:
+            where = self._WHERE_NATIVE
+            params: tuple[Any, ...] = ()
+        else:
+            where = self._WHERE_NATIVE + " AND s.folder_id = ?"
+            params = (folder_id,)
+        return self._list_session_summaries_sync(where, limit, offset, params)
 
     def _list_imported_sessions_sync(
         self,
@@ -1419,8 +1693,9 @@ class SQLiteSessionStore:
         self,
         limit: int = 50,
         offset: int = 0,
+        folder_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        return await self._run(self._list_sessions_sync, limit, offset)
+        return await self._run(self._list_sessions_sync, limit, offset, folder_id)
 
     async def list_imported_sessions(
         self,

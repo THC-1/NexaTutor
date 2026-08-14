@@ -1015,7 +1015,7 @@ export default memo(function ChatComposer({
               </div>
 
               <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                {connectedAgents.length > 0 && onSelectAgent ? (
+                {onSelectAgent ? (
                   <AgentSelector
                     agents={connectedAgents}
                     selected={selectedAgent}

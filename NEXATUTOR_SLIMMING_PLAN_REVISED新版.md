@@ -6,13 +6,13 @@
 > 目标场景：个人本地运行、接入云端 API、数据默认保存在本地
 > 改造方式：以当前本地 DeepTutor 代码为基线，逐步裁剪并演化为独立项目
 > 执行节奏：单功能、小提交、逐步验证、缓慢推进
-> 最后修订：2026-08-12
+> 最后修订：2026-08-13
 
 本文件是 NexaTutor 裁剪工作的唯一执行基准。旧版方案仅作为历史参考；如果后续决策发生变化，应先更新本文件，再实施代码改动。
 
 ---
 
-## 0. 当前执行状态（2026-08-12）
+## 0. 当前执行状态（2026-08-13）
 
 - P0 仓库级安全与发布收口已完成：`serve` 默认绑定 `127.0.0.1`，Auth off 不再接受任意 CORS Origin，原 PyPI / Docker Release workflows 已暂停，`web/.next-deeptutor` 已停止跟踪并忽略。
 - Partners 已按“取消注册 → 取消调用 → 删除 UI → 删除后端实现 → 删除依赖”完整裁剪；Router、CLI、Tools、Partner Subagent backend、调用点、UI、实现、依赖和正向测试均已移除。
@@ -21,8 +21,12 @@
 - P4 已完成：账号 Auth / Admin / Multi-user / Grants 的注册、调用、UI、实现与专属依赖均已删除，运行边界已收敛为 `LocalUserContext → LocalWorkspace → data/user`；OpenAI Codex OAuth 与 My Agents / Subagents 继续保留。
 - P5 已完成：PocketBase / 外部集成 Sidecar 与公网部署能力已按五步裁剪；Session 固定使用本地 SQLite，公网配置收敛为 loopback，Next 同源代理、Sandbox Runner、Codex OAuth 与 My Agents / Subagents 继续保留。
 - P6 已完成：Book / Living Book、Videogen、Math Animator / Manim、GeoGebra、Cron、Built-in GitHub / Brainstorm / Reason / Exec 已按单功能五步删除；受限 Code Execution 已完成 Python-only、显式启用、SYSTEM isolation、argv-only 安全收敛。
-- P7 已完成：RAG Registry 只保留 `llamaindex`，知识库产品路径收敛为 Parse → Chunk → Embedding → FAISS + BM25 Hybrid → Citation；非标准引擎均按五步删除。下一步为 P8 Provider 收缩。
+- P7 已完成：RAG Registry 只保留 `llamaindex`，知识库产品路径收敛为 Parse → Chunk → Embedding → FAISS + BM25 Hybrid → Citation；非标准引擎均按五步删除。
 - P8 已完成：LLM 产品入口收敛为六类，Runtime Registry 为六类加独立 `openai_codex`；29 个非目标 Spec、GitHub Copilot / Azure 专用实现、Copilot CLI 与专属依赖已删除。Provider Key 改为普通响应不可读的 write-only 三态更新。
+- P9 / P10 已完成：Settings 与导航完成收口；Memory L1 / L2 / L3 主导航、响应式工作台和手动 Refresh / Update / Audit / Dedup 入口恢复并纳入正向契约保护。
+- P11 已完成依赖最终清洗；P12 第一层已完成公开品牌、分发名、正式 CLI、Docker / Compose 与环境变量改名。内部 Python namespace、持久化键和用户数据路径暂不迁移。
+
+裁剪施工到此完成，项目进入改造阶段。本文件继续作为已删除边界、兼容约束和五步删除方法的基准，不再把下文中的阶段任务理解为待办清单。后续改造以当前代码、`README.md` 和 `NEXATUTOR_HANDOFF.md` 的现状说明为准；若产品边界变化，必须先修订本文件。
 
 ---
 
@@ -865,7 +869,7 @@ LocalUserContext
      - 干净 import、FastAPI startup、CLI、Python 与前端构建通过
 ```
 
-完成证据（2026-08-12）：账号 Auth / Multi-user 实现与专属依赖已清零；旧配置无法激活；P4 后端集成 256 passed / 1 skipped；前端 Node 271 passed、i18n / lint / production build 通过。下一步进入批次 5，只先做 PocketBase 与外部集成 Sidecar 的 Core 依赖盘点。
+完成证据（2026-08-12，历史记录）：账号 Auth / Multi-user 实现与专属依赖已清零；旧配置无法激活；P4 后端集成 256 passed / 1 skipped；前端 Node 271 passed、i18n / lint / production build 通过。随后批次 5 已完成，当前不要按本句重新安排施工顺序。
 
 并行施工约束：Agent 可并行做只读盘点或互不重叠的文件域；共享注册点、依赖文件、计划与交接文档只由主 Agent 修改，避免覆盖工作区已有变更。
 

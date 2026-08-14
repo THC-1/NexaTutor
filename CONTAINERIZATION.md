@@ -56,7 +56,7 @@ python scripts/docker_compose.py -f docker-compose.ghcr.yml ps
 ghcr.io/thc-1/nexatutor:latest
 ```
 
-此方式会包含尚未裁剪完成的上游能力。做 NexaTutor 功能验收时，应优先构建当前源码，而不是用 GHCR 镜像判断裁剪结果。
+预构建镜像可能落后于当前源码。做 NexaTutor 功能验收时，应优先构建当前源码，不能用旧 GHCR 镜像判断当前功能边界。
 
 ## Rootless Podman
 
@@ -114,7 +114,7 @@ docker compose -f docker-compose.yml restart nexatutor
 
 ### 临时本地 Codex OAuth 桥接
 
-OpenAI Codex OAuth 仍是迁移期兼容能力。浏览器回调端口需要临时映射到前端 `3782`：
+OpenAI Codex OAuth 是独立 Core 能力。浏览器回调端口需要临时映射到前端 `3782`：
 
 ```text
 127.0.0.1:1455:3782
@@ -166,7 +166,7 @@ docker compose -f docker-compose.yml up -d --force-recreate nexatutor
 - Docker Desktop 通常使用 `host.docker.internal`。
 - Podman 通常使用 `host.containers.internal`。
 
-本地模型入口最终计划从 NexaTutor 产品层删除，因此不要围绕 Ollama、LM Studio、vLLM 或 llama.cpp 新增长期文档与 UI。
+Ollama、LM Studio、vLLM 和 llama.cpp 的专用 LLM 产品入口已经删除。兼容 OpenAI / Anthropic 协议的服务只能通过对应 compatible 入口配置，不能恢复专用 Adapter、文档或 UI。
 
 ## 故障检查
 

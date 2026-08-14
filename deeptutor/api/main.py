@@ -278,6 +278,7 @@ from deeptutor.api.routers import (
     question,
     question_notebook,
     quiz_judge,
+    session_folders,
     sessions,
     settings,
     skills,
@@ -323,6 +324,11 @@ app.include_router(
 )
 app.include_router(
     sessions.router, prefix="/api/v1/sessions", tags=["sessions"]
+)
+app.include_router(
+    session_folders.router,
+    prefix="/api/v1/session-folders",
+    tags=["session-folders"],
 )
 app.include_router(
     question_notebook.router,

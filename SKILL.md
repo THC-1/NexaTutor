@@ -1,45 +1,44 @@
 # NexaTutor CLI 使用说明
 
-本文供自动化 Agent 和终端用户调用 NexaTutor 当前兼容 CLI。迁移期命令名仍为 `deeptutor`；不要虚构尚未发布的 `nexatutor` 可执行文件。
-
-## 适用场景
-
-- 从终端启动本地 Web / API。
-- 执行 Chat、Solve、Research、Question、Mastery 或 Visualize。
-- 管理知识库、会话、Notebook 和 Memory。
-- 以 NDJSON / JSON 形式接收结构化事件。
+本文供自动化 Agent 和终端用户调用 NexaTutor CLI。正式命令为 `nexatutor`；旧 `deeptutor` 仅作带迁移提示的兼容转发，新脚本不应继续依赖旧命令。
 
 ## 前置条件
 
 ```powershell
-deeptutor init
+nexatutor init
 ```
 
-运行设置位于当前 workspace 的 `data/user/settings/`。项目根 `.env` 不作为运行时配置来源。
+运行设置位于当前 workspace 的 `data/user/settings/`，项目根 `.env` 不作为应用运行时配置来源。
 
-## 核心命令
-
-### 启动
+## 启动
 
 ```powershell
-deeptutor start
-deeptutor start --dev
-deeptutor serve --port 8001
+nexatutor start
+nexatutor start --dev
+nexatutor serve --port 8001
 ```
 
-### Chat 与 Capability
+## Capability
+
+当前内置 Capability：
+
+```text
+chat, deep_solve, deep_question, deep_research, visualize, mastery_path
+```
+
+示例：
 
 ```powershell
-deeptutor chat
-deeptutor run chat "解释傅里叶变换"
-deeptutor run deep_solve "求解 x^2 = 4" --tool rag --kb calculus
-deeptutor run deep_question "为线性代数生成练习题"
-deeptutor run deep_research "整理量子计算研究脉络" --config mode=report --config depth=2
-deeptutor run visualize "用 Mermaid 展示 TCP 握手"
-deeptutor run mastery_path "制定微积分掌握路径"
+nexatutor chat
+nexatutor run chat "解释傅里叶变换"
+nexatutor run deep_solve "求解 x^2 = 4" --tool rag --kb calculus
+nexatutor run deep_question "为线性代数生成练习题"
+nexatutor run deep_research "整理量子计算研究脉络" --config mode=report --config depth=2
+nexatutor run visualize "用 Mermaid 展示 TCP 握手"
+nexatutor run mastery_path "制定微积分掌握路径"
 ```
 
-当前 `run` 仍可能接受 `math_animator`，但该能力计划从 NexaTutor 删除，不应作为新的 Core 工作流依赖。
+`math_animator` 已删除，不是可用 Capability。
 
 常用参数：
 
@@ -55,71 +54,51 @@ deeptutor run mastery_path "制定微积分掌握路径"
 --format / -f <fmt>     rich 或 json
 ```
 
-### 知识库
+## 数据命令
 
 ```powershell
-deeptutor kb list
-deeptutor kb create calculus --doc .\textbook.pdf
-deeptutor kb info calculus
+nexatutor kb list
+nexatutor kb create calculus --doc .\textbook.pdf
+nexatutor kb info calculus
+nexatutor session list
+nexatutor notebook list
+nexatutor memory show
+nexatutor config show
 ```
 
-### 会话、Notebook 与 Memory
+## Provider 登录
+
+Provider CLI 只保留 OpenAI Codex OAuth：
 
 ```powershell
-deeptutor session list
-deeptutor notebook list
-deeptutor memory show
+nexatutor provider login openai-codex
 ```
 
-### 配置
-
-```powershell
-deeptutor config show
-```
-
-Provider 专用 OAuth / validation 仍是迁移期兼容入口，后续会随 Provider 收缩处理：
-
-```powershell
-deeptutor provider login openai-codex
-deeptutor provider login github-copilot
-```
-
-`openai-codex` 执行 OAuth 登录；`github-copilot` 只校验已有 Copilot 认证，不执行新的 OAuth 登录。
+GitHub Copilot 和其他专用 Provider 登录已删除。
 
 ## 结构化输出
 
-Agent 调用时优先使用 JSON 格式：
+Agent 调用优先使用 JSON：
 
 ```powershell
-deeptutor run chat "总结这份资料" --format json
+nexatutor run chat "总结这份资料" --format json
 ```
 
-输出为逐行事件。每个事件包含会话或 Turn 相关字段；调用方应等待最终 `done` / result 事件，不要只读取第一行。
+输出为逐行事件。调用方应等待最终 `done` / result 事件，不能只读取第一行。`ask_user` 可能暂停一轮等待输入；无交互环境必须处理空回答或超时。
 
-`ask_user` 可能暂停一轮等待用户输入。无交互环境必须明确处理空回答或超时，不能无限等待。
-
-## REPL
-
-```powershell
-deeptutor chat
-```
-
-常用斜杠命令以当前 `deeptutor chat --help` 和 REPL 内 `/help` 为准。`/regenerate` 或 `/retry` 会重新执行上一条用户消息。
-
-## 迁移期入口
-
-当前 CLI 仍可能显示：
+## 当前顶层入口
 
 ```text
-partner, plugin, skill, skills, provider, book
+init, run, start, serve, chat, kb, skill, skills,
+memory, config, session, notebook, provider
 ```
 
-这些入口并不属于 NexaTutor 最终 Core。只有相应代码真正完成取消注册后，文档与契约测试才能删除它们；在此之前不要声称命令已经不可用。
+`skill` / `skills` 仅管理本地 Skill；`provider` 不是通用 Provider 管理器。`partner`、`plugin`、`book` 已删除。
 
-## Agent 使用约束
+## Agent 约束
 
-- 不使用 `exec` 作为通用 Shell 后门。
-- 不自动开启 Code Execution；它目前不应被视为强安全沙箱。
-- 不通过 CLI 自动删除历史数据。
+- 不使用已删除的 `exec` 作为 Shell 后门。
+- 不自动开启 Code Execution；它是风险降低机制，不是强安全沙箱。
+- 不自动删除或迁移历史数据。
 - 不输出或记录 API Key、OAuth Token 和个人资料。
-- 需要修改项目时先读取 `AGENTS.md` 和正式裁剪计划。
+- 修改项目之前读取 `AGENTS.md` 和正式裁剪计划。

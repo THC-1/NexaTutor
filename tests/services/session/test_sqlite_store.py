@@ -38,9 +38,14 @@ def test_sqlite_store_migrates_legacy_chat_history_db(tmp_path: Path) -> None:
         service._user_data_dir = tmp_path / "data" / "user"
         legacy_db = tmp_path / "data" / "chat_history.db"
         legacy_db.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(legacy_db) as conn:
+        conn = sqlite3.connect(legacy_db)
+        try:
             conn.execute("CREATE TABLE legacy (id INTEGER PRIMARY KEY)")
             conn.commit()
+        finally:
+            # Must close before the store's os.replace: on Windows an open
+            # sqlite3 handle blocks the rename (sharing violation).
+            conn.close()
 
         store = SQLiteSessionStore()
 

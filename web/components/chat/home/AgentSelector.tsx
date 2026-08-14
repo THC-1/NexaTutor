@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Bot, Check, ChevronDown, Minus, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { agentGlyph } from "@/components/agents/agent-icons";
@@ -105,7 +106,20 @@ export default function AgentSelector({
           className={`dt-popup-up absolute right-0 z-50 ${menuPlacementClass} w-[min(280px,calc(100vw-32px))] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--popover)] shadow-lg backdrop-blur-md`}
         >
           <div className="max-h-[280px] overflow-y-auto py-1">
-            {agents.map((agent) => {
+            {agents.length === 0 ? (
+              <div className="px-3 py-2.5">
+                <p className="text-[12px] leading-5 text-[var(--muted-foreground)]">
+                  {t("No connected agents — connect one in My Agents.")}
+                </p>
+                <Link
+                  href="/agents"
+                  onClick={() => setOpen(false)}
+                  className="mt-1.5 inline-flex h-7 items-center rounded-md px-2 text-[12px] font-medium text-[var(--primary)] transition-colors hover:bg-[var(--primary)]/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                >
+                  {t("My Agents")}
+                </Link>
+              </div>
+            ) : agents.map((agent) => {
               const active = selected === agent.name;
               const RowGlyph = agentGlyph(agent.kind) ?? Bot;
               return (
@@ -138,7 +152,7 @@ export default function AgentSelector({
             })}
           </div>
 
-          {onBudgetChange && (
+          {agents.length > 0 && onBudgetChange && (
             <div className="flex items-center justify-between gap-2 border-t border-[var(--border)] px-3 py-2">
               <span className="min-w-0 text-[11.5px] text-[var(--muted-foreground)]">
                 {t("Max rounds NexaTutor may ask")}

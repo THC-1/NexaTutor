@@ -415,7 +415,10 @@ class QuestionPipeline:
 
         self.registry = get_tool_registry()
         self.usage = UsageTracker(model=self.model)
-        self._optional_tools = default_optional_tools()
+        # Quiz has its own structured answer cards and does not implement the
+        # chat loop's ask_user pause/resume protocol. Exposing that tool here
+        # creates an interactive-looking card with no live reply queue.
+        self._optional_tools = default_optional_tools(excluded={"ask_user"})
         self._temperature = 0.4
 
         try:

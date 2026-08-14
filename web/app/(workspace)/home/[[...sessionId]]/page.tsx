@@ -1313,19 +1313,15 @@ export default function ChatPage() {
     [state.messages],
   );
 
-  // Context-window readout for the composer chip: the newest turn that was
-  // actually measured. Walking newest-first is what keeps the number steady
-  // while a new turn streams — the in-flight assistant message has no result
-  // event yet, so the walk falls through to the last completed turn and the
-  // chip flips exactly once, when the new measurement lands.
+  // Context-window readout for the composer chip: only the current assistant
+  // turn may provide the value. A new turn starts with an empty assistant
+  // message, so returning null until its result event arrives prevents the
+  // previous turn's measurement from being presented as current state.
   const contextBudget = useMemo(() => {
-    for (let i = state.messages.length - 1; i >= 0; i -= 1) {
-      const msg = state.messages[i];
-      if (msg.role !== "assistant") continue;
-      const budget = readContextBudget(msg.events);
-      if (budget) return budget;
-    }
-    return null;
+    const current = state.messages[state.messages.length - 1];
+    return current?.role === "assistant"
+      ? readContextBudget(current.events)
+      : null;
   }, [state.messages]);
 
   /**

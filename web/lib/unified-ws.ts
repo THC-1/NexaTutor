@@ -28,7 +28,8 @@ export type StreamEventType =
   | "error"
   | "session"
   | "session_meta"
-  | "done";
+  | "done"
+  | "user_reply_ack";
 
 export interface StreamEvent {
   type: StreamEventType;

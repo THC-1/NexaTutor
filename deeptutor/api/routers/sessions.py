@@ -32,6 +32,12 @@ class BranchSelectionRequest(BaseModel):
     selected_branches: dict[str, int] = Field(default_factory=dict)
 
 
+class SessionFolderRequest(BaseModel):
+    """Move a session into a folder. ``folder_id=""`` = unassigned."""
+
+    folder_id: str = Field(default="", max_length=64)
+
+
 class QuizResultItem(BaseModel):
     question_id: str = ""
     question: str = Field(..., min_length=1)
@@ -81,9 +87,15 @@ def _format_quiz_results_message(answers: list[QuizResultItem]) -> str:
 async def list_sessions(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    folder_id: str | None = Query(default=None, max_length=64),
 ):
+    """List native chat sessions.
+
+    ``folder_id`` narrows to one folder; ``folder_id=""`` (explicit empty
+    value) returns the unassigned bucket; absent = all sessions.
+    """
     store = get_session_store()
-    sessions = await store.list_sessions(limit=limit, offset=offset)
+    sessions = await store.list_sessions(limit=limit, offset=offset, folder_id=folder_id)
     return {"sessions": sessions}
 
 
@@ -161,6 +173,25 @@ async def delete_session(session_id: str):
     except Exception:
         logger.exception("failed to clean up attachments for session %s", session_id)
     return {"deleted": True, "session_id": session_id}
+
+
+@router.put("/{session_id}/folder")
+async def set_session_folder(session_id: str, payload: SessionFolderRequest):
+    """Move a single session into a folder (``folder_id=""`` = unassigned).
+
+    Also the individual-recovery path for sessions inside archived folders:
+    moving one out of the archive (to unassigned or an active folder) is the
+    only way sessions leave an archived folder without deleting it.
+    """
+    store = get_sqlite_session_store()
+    try:
+        updated = await store.set_session_folder(session_id, payload.folder_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = await store.get_session(session_id)
+    return {"session": session}
 
 
 @router.put("/{session_id}/branch-selection")
